@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 
 namespace Amateurlog
@@ -8,23 +9,24 @@ namespace Amateurlog
     {
         static void Main(string[] args)
         {
-            var program = @"
-foo(a, X).
-";
+            var program = File.ReadAllText(args[0]);
             var ast = PrologParser.ParseProgram(program);
             var engine = new Engine(ast);
 
-            var query = PrologParser.ParseQuery("foo(X, b)");
-
-            var result = engine.Query(query).FirstOrDefault();
-
-            if (result == null)
+            while (true)
             {
-                Console.WriteLine("no solution");
-            }
-            else
-            {
-                Console.WriteLine(Write(result));
+                var query = PrologParser.ParseQuery(Console.ReadLine());
+
+                var result = engine.Query(query).FirstOrDefault();
+
+                if (result == null)
+                {
+                    Console.WriteLine("no solution");
+                }
+                else
+                {
+                    Console.WriteLine(Write(result));
+                }
             }
         }
 
