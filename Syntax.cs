@@ -23,15 +23,12 @@ namespace Amateurlog
             ) + ".";
     }
 
-    abstract class Term : IUnifiable<Term>
+    abstract partial class Term : IUnifiable<Term>
     {
         public abstract int CountChildren();
         public abstract void GetChildren(Span<Term> childrenReceiver);
         public abstract Term SetChildren(ReadOnlySpan<Term> newChildren);
         
-        public abstract string AsVariable();
-        public abstract bool Match(Term right);
-
         public override string ToString()
             => this.Fold<Term, string>(
                 (childResults, x) =>
@@ -50,7 +47,7 @@ namespace Amateurlog
                 }
             );
     }
-    class Atom : Term
+    partial class Atom : Term
     {
         public string Value { get; }
         public Atom(string value)
@@ -62,11 +59,8 @@ namespace Amateurlog
         public override void GetChildren(Span<Term> childrenReceiver) {}
         public override Term SetChildren(ReadOnlySpan<Term> newChildren)
             => this;
-
-        public override string AsVariable() => null;
-        public override bool Match(Term right) => right is Atom a && a.Value == Value;
     }
-    class Variable : Term
+    partial class Variable : Term
     {
         public string Name { get; }
         public Variable(string name)
@@ -78,11 +72,8 @@ namespace Amateurlog
         public override void GetChildren(Span<Term> childrenReceiver) {}
         public override Term SetChildren(ReadOnlySpan<Term> newChildren)
             => this;
-
-        public override string AsVariable() => Name;
-        public override bool Match(Term right) => right is Variable v && v.Name == Name;
     }
-    class Predicate : Term
+    partial class Predicate : Term
     {
         public string Name { get; }
         public ImmutableArray<Term> Args { get; }
@@ -102,8 +93,5 @@ namespace Amateurlog
         }
         public override Term SetChildren(ReadOnlySpan<Term> newChildren)
             => new Predicate(Name, newChildren.ToArray().ToImmutableArray());
-
-        public override string AsVariable() => null;
-        public override bool Match(Term right) => right is Predicate p && p.Name == Name;
     }
 }
