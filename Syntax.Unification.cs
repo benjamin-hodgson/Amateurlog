@@ -1,6 +1,5 @@
 namespace Amateurlog
 {
-
     abstract partial class Term : IUnifiable<Term>
     {
         public abstract string AsVariable();

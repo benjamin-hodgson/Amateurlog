@@ -23,7 +23,7 @@ namespace Amateurlog
             ) + ".";
     }
 
-    abstract partial class Term : IUnifiable<Term>
+    abstract partial class Term : IRewritable<Term>
     {
         public abstract int CountChildren();
         public abstract void GetChildren(Span<Term> childrenReceiver);
