@@ -3,7 +3,7 @@ using Pidgin;
 using static Pidgin.Parser;
 using static Pidgin.Parser<char>;
 
-namespace Prolog
+namespace Amateurlog
 {
     static class PrologParser
     {

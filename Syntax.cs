@@ -3,7 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using Sawmill;
 
-namespace Prolog
+namespace Amateurlog
 {
     class Rule
     {

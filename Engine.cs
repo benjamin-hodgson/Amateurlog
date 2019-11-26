@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 
-namespace Prolog
+namespace Amateurlog
 {
     class Engine
     {
