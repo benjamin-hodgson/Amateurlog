@@ -70,9 +70,7 @@ namespace Amateurlog
 
         private static readonly Parser<char, Predicate> _query = SkipWhitespaces.Then(_predicate);
 
-        private static T Parse<T>(Parser<char, T> p, string input) => p.ParseOrThrow(input);
-
         public static ImmutableArray<Rule> ParseProgram(string input) => _program.ParseOrThrow(input);
-        public static Term ParseQuery(string input) => Parse(_predicate, input);
+        public static Term ParseQuery(string input) => _predicate.ParseOrThrow(input);
     }
 }
