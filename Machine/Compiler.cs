@@ -93,8 +93,9 @@ namespace Amateurlog.Machine
         private static (ImmutableDictionary<string, int>, IEnumerable<Instruction>) AllocateVariables(IEnumerable<Term> terms)
         {
             var variables = terms
-                .Select(t => t.Variables())
-                .Aggregate(ImmutableHashSet<string>.Empty, (x, y) => x.Union(y))
+                .SelectMany(t => t.Variables())
+                .Distinct()
+                .OrderBy(x => x)
                 .Select((x, i) => new KeyValuePair<string, int>(x, i))
                 .ToImmutableDictionary();
             
@@ -215,6 +216,7 @@ namespace Amateurlog.Machine
                     _ => null
                 })
                 .Where(name => name != null)
-                .Distinct();
+                .Distinct()
+                .OrderBy(x => x);
     }
 }
