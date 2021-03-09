@@ -116,15 +116,34 @@ namespace Amateurlog.Machine
             Term term,
             ImmutableDictionary<string, int> atoms,
             ImmutableDictionary<string, int> variables
-        ) => term
-            .SelfAndDescendants()
-            .SelectMany(
-                x => x switch
+        ) => term.Fold<Term, IEnumerable<Instruction>>(
+                (instrs, x) =>
                 {
-                    Predicate p => new[] { new I.GetObject(atoms[p.Name], p.Args.Length) },
-                    Atom a => new Instruction[] { new I.GetObject(atoms[a.Value], 0) },
-                    Variable v => new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Unify() },
-                    _ => throw new Exception()
+                    switch (x)
+                    {
+                        case Predicate p:
+                            var result = new List<Instruction>
+                            {
+                                new I.Dup(),
+                                new I.Dup(),
+                                new I.GetObject(atoms[p.Name], p.Args.Length),
+                                new I.Unify()
+                            };
+                            for (var i = 0; i < instrs.Length; i++)
+                            {
+                                result.Add(new I.Dup());
+                                result.Add(new I.LoadField(i));
+                                result.AddRange(instrs[i]);
+                            }
+                            result.Add(new I.Pop());
+                            return result;
+                        case Atom a:
+                            return new Instruction[] { new I.Dup(), new I.GetObject(atoms[a.Value], 0), new I.Unify() };
+                        case Variable v:
+                            return new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Unify() };
+                        default:
+                            throw new Exception();
+                    }
                 }
             );
 
@@ -161,14 +180,33 @@ namespace Amateurlog.Machine
             Term term,
             ImmutableDictionary<string, int> atoms,
             ImmutableDictionary<string, int> variables
-        ) => term.SelfAndDescendants()
-            .SelectMany(
-                x => x switch
+        ) => term.Fold<Term, IEnumerable<Instruction>>(
+                (instrs, x) =>
                 {
-                    Predicate p => new[] { new I.CreateObject(atoms[p.Name], p.Args.Length) },
-                    Atom a => new Instruction[] { new I.CreateObject(atoms[a.Value], 0) },
-                    Variable v => new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Bind() },
-                    _ => throw new Exception()
+                    switch (x)
+                    {
+                        case Predicate p:
+                            var result = new List<Instruction>
+                            {
+                                new I.Dup(),
+                                new I.CreateObject(atoms[p.Name], p.Args.Length),
+                                new I.Bind()
+                            };
+                            for (var i = 0; i < instrs.Length; i++)
+                            {
+                                result.Add(new I.Dup());
+                                result.Add(new I.LoadField(i));
+                                result.AddRange(instrs[i]);
+                            }
+                            result.Add(new I.Pop());
+                            return result;
+                        case Atom a:
+                            return new Instruction[] { new I.CreateObject(atoms[a.Value], 0), new I.Bind() };
+                        case Variable v:
+                            return new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Bind() };
+                        default:
+                            throw new Exception();
+                    }
                 }
             );
 

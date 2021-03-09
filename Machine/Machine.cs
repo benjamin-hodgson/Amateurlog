@@ -130,6 +130,11 @@ namespace Amateurlog.Machine
                     Push(_stack[_stackHeight - 1]);
                     _instructionPointer++;
                     return;
+                
+                case I.Pop:
+                    Pop();
+                    _instructionPointer++;
+                    return;
 
                 case I.CreateVariable:
                     _heap[_topOfHeap] = 0;
@@ -139,13 +144,20 @@ namespace Amateurlog.Machine
                     _instructionPointer++;
                     return;
 
+                case I.LoadField(var fieldNum):
+                {
+                    var addr = Deref(Pop());
+                    Push(addr + 3 + (fieldNum * 2));
+                    _instructionPointer++;
+                    return;
+                }
+
                 case I.CreateObject(var atomId, var length):
                 {
-                    var addr = Pop();
                     _heap[_topOfHeap] = 1;
                     _heap[_topOfHeap + 1] = atomId;
                     _heap[_topOfHeap + 2] = length;
-                    Bind(addr, _topOfHeap);
+                    Push(_topOfHeap);
                     _topOfHeap += 3;
 
                     _topOfHeap += length * 2;
@@ -154,7 +166,6 @@ namespace Amateurlog.Machine
                         var x = _topOfHeap - (i + 1) * 2;
                         _heap[x] = 0;
                         _heap[x + 1] = x;
-                        Push(x);
                     }
 
                     _instructionPointer++;
@@ -169,7 +180,7 @@ namespace Amateurlog.Machine
                         _heap[_topOfHeap] = 1;
                         _heap[_topOfHeap + 1] = atomId;
                         _heap[_topOfHeap + 2] = length;
-                        Bind(addr, _topOfHeap);
+                        Push(_topOfHeap);
                         _topOfHeap += 3;
 
                         _topOfHeap += length * 2;
@@ -178,7 +189,6 @@ namespace Amateurlog.Machine
                             var x = _topOfHeap - (i + 1) * 2;
                             _heap[x] = 0;
                             _heap[x + 1] = x;
-                            Push(x);
                         }
                     }
                     else
@@ -188,10 +198,7 @@ namespace Amateurlog.Machine
                             Backtrack();
                             return;
                         }
-                        for (var i = length - 1; i >= 0; i--)
-                        {
-                            Push(addr + 3 + i * 2);
-                        }
+                        Push(addr);
                     }
 
                     _instructionPointer++;

@@ -10,10 +10,12 @@ namespace Amateurlog.Machine
 
         // [...] -> [..., X]
         public record CreateVariable() : Instruction;
-        // [..., X] -> [..., FieldN..Field0]
+        // [...] -> [..., X]
         public record CreateObject(int atomId, int length) : Instruction;
-        // [..., X] -> [..., FieldN..Field0]
+        // [..., X] -> [..., Deref(X)]
         public record GetObject(int atomId, int length) : Instruction;
+        // [..., X] -> [..., X[fieldNum]]
+        public record LoadField(int fieldNum) : Instruction;
 
         // [..., X] -> [...]
         public record StoreLocal(int slot) : Instruction;
@@ -23,6 +25,8 @@ namespace Amateurlog.Machine
         public record LoadArg(int arg) : Instruction;
         // [..., X] -> [..., X, X]
         public record Dup() : Instruction;
+        // [..., X] -> [...]
+        public record Pop() : Instruction;
 
         // [..., X, Y] -> [...]
         public record Bind : Instruction;
