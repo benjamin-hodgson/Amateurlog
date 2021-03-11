@@ -96,14 +96,14 @@ namespace Amateurlog.Machine
                 .SelectMany(t => t.Variables())
                 .Distinct()
                 .OrderBy(x => x)
-                .Select((x, i) => new KeyValuePair<string, int>(x, i))
+                .Select((x, i) => new KeyValuePair<string, int>(x, i + 1))
                 .ToImmutableDictionary();
             
             IEnumerable<Instruction> Code()
             {
-                yield return new I.Allocate(variables.Count);
+                yield return new I.Allocate(variables.Count + 1);
 
-                for (var i = 0; i < variables.Count; i++)
+                for (var i = 1; i < variables.Count + 1; i++)
                 {
                     yield return new I.CreateVariable();
                     yield return new I.StoreLocal(i);
@@ -112,38 +112,35 @@ namespace Amateurlog.Machine
             return (variables, Code());
         }
 
+        // With (the address of) a heap object on the stack,
+        // match the heap object to the term, binding any variables,
+        // and pop the address from the stack
         private static IEnumerable<Instruction> MatchTerm(
             Term term,
             ImmutableDictionary<string, int> atoms,
             ImmutableDictionary<string, int> variables
-        ) => term.Fold<Term, IEnumerable<Instruction>>(
-                (instrs, x) =>
+        ) => term
+            .SelfAndDescendants()
+            .SelectMany(x =>
+                x switch
                 {
-                    switch (x)
-                    {
-                        case Predicate p:
-                            var result = new List<Instruction>
-                            {
-                                new I.Dup(),
-                                new I.Dup(),
-                                new I.GetObject(atoms[p.Name], p.Args.Length),
-                                new I.Unify()
-                            };
-                            for (var i = 0; i < instrs.Length; i++)
-                            {
-                                result.Add(new I.Dup());
-                                result.Add(new I.LoadField(i));
-                                result.AddRange(instrs[i]);
-                            }
-                            result.Add(new I.Pop());
-                            return result;
-                        case Atom a:
-                            return new Instruction[] { new I.Dup(), new I.GetObject(atoms[a.Value], 0), new I.Unify() };
-                        case Variable v:
-                            return new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Unify() };
-                        default:
-                            throw new Exception();
-                    }
+                    Predicate p =>
+                        new Instruction[]
+                        {
+                            new I.Dup(),
+                            new I.GetObject(atoms[p.Name], p.Args.Length),
+                            new I.StoreLocal(0),
+                            new I.LoadLocal(0),
+                            new I.Unify()
+                        }.Concat(
+                            Enumerable
+                                .Range(0, p.Args.Length)
+                                .Reverse()
+                                .SelectMany(i => new Instruction[] { new I.LoadLocal(0), new I.LoadField(i) })
+                        ),
+                    Atom a => new Instruction[] { new I.Dup(), new I.GetObject(atoms[a.Value], 0), new I.Unify() },
+                    Variable v => new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Unify() },
+                    _ => throw new Exception()
                 }
             );
 
@@ -176,37 +173,33 @@ namespace Amateurlog.Machine
             yield return new I.Call(atoms[goal.Name] << 8, goal.Args.Length);
         }
 
+        // With (the address of) an unbound variable on the stack,
+        // build the term, bind the variable to the term, and pop the
+        // address from the stack
         private static IEnumerable<Instruction> BuildTerm(
             Term term,
             ImmutableDictionary<string, int> atoms,
             ImmutableDictionary<string, int> variables
-        ) => term.Fold<Term, IEnumerable<Instruction>>(
-                (instrs, x) =>
+        ) => term
+            .SelfAndDescendants()
+            .SelectMany(x =>
+                x switch
                 {
-                    switch (x)
-                    {
-                        case Predicate p:
-                            var result = new List<Instruction>
-                            {
-                                new I.Dup(),
-                                new I.CreateObject(atoms[p.Name], p.Args.Length),
-                                new I.Bind()
-                            };
-                            for (var i = 0; i < instrs.Length; i++)
-                            {
-                                result.Add(new I.Dup());
-                                result.Add(new I.LoadField(i));
-                                result.AddRange(instrs[i]);
-                            }
-                            result.Add(new I.Pop());
-                            return result;
-                        case Atom a:
-                            return new Instruction[] { new I.CreateObject(atoms[a.Value], 0), new I.Bind() };
-                        case Variable v:
-                            return new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Bind() };
-                        default:
-                            throw new Exception();
-                    }
+                    Predicate p =>
+                        new Instruction[]
+                        {
+                            new I.CreateObject(atoms[p.Name], p.Args.Length),
+                            new I.StoreLocal(0),
+                            new I.LoadLocal(0),
+                            new I.Bind()
+                        }.Concat(
+                            Enumerable.Range(0, p.Args.Length)
+                                .Reverse()
+                                .SelectMany(i => new Instruction[] { new I.LoadLocal(0), new I.LoadField(i) })
+                        ),
+                    Atom a => new Instruction[] { new I.CreateObject(atoms[a.Value], 0), new I.Bind() },
+                    Variable v => new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Bind() },
+                    _ => throw new Exception()
                 }
             );
 
