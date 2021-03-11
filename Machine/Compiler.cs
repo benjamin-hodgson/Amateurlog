@@ -29,7 +29,7 @@ namespace Amateurlog.Machine
                 code.AddRange(CompileProcedure(group, atomsLookup));
             }
 
-            return new Program(atoms, Assemble(code).ToImmutableArray());
+            return new Program(atoms, code.ToImmutableArray());
         }
 
         private static IEnumerable<Instruction> CompileProcedure(IEnumerable<Rule> clauses, ImmutableDictionary<string, int> atoms)
@@ -202,34 +202,6 @@ namespace Amateurlog.Machine
                     _ => throw new Exception()
                 }
             );
-
-
-        private static IEnumerable<Instruction> Assemble(IEnumerable<Instruction> code)
-        {
-            var labels = new Dictionary<int, int>();
-            var counter = 0;
-            foreach (var instr in code)
-            {
-                if (instr is I.Label(var id))
-                {
-                    labels.Add(id, counter);
-                }
-                else
-                {
-                    counter++;
-                }
-            }
-            
-            return code
-                .Where(i => i is not I.Label)
-                .Select(i => i switch
-                {
-                    I.Call(var labelId, var args) => new I.Call(labels[labelId], args),
-                    I.Try(var labelId) => new I.Try(labels[labelId]),
-                    I.Catch(var labelId) => new I.Catch(labels[labelId]),
-                    _ => i
-                });
-        }
 
         private static IEnumerable<string> GetAtoms(Rule rule)
             => rule.Body
