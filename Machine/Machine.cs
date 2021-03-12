@@ -237,7 +237,7 @@ namespace Amateurlog.Machine
                 }
 
                 case I.Write(var msg):
-                    Console.Write(_program.Atoms[msg]);
+                    Console.Write(_program.Symbols[msg]);
                     _instructionPointer++;
                     return;
 
@@ -354,7 +354,7 @@ namespace Amateurlog.Machine
             {
                 return "X" + address;
             }
-            var name = _program.Atoms[_heap[address + 1]];
+            var name = _program.Symbols[_heap[address + 1]];
             var length = _heap[address + 2];
             if (length == 0)
             {
