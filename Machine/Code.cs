@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 
 namespace Amateurlog.Machine
 {
-    record Program(ImmutableArray<string> Atoms, ImmutableArray<Instruction> Code);
+    record Program(ImmutableArray<string> Symbols, ImmutableArray<Instruction> Code);
 
     abstract record Instruction
     {
@@ -47,6 +47,6 @@ namespace Amateurlog.Machine
 
         // [..., X] -> X
         public record Dump() : Instruction;
-        public record Write(string msg) : Instruction;
+        public record Write(int id) : Instruction;
     }
 }

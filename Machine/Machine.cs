@@ -237,7 +237,7 @@ namespace Amateurlog.Machine
                 }
 
                 case I.Write(var msg):
-                    Console.Write(msg);
+                    Console.Write(_program.Atoms[msg]);
                     _instructionPointer++;
                     return;
 

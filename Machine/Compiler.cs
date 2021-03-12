@@ -11,35 +11,37 @@ namespace Amateurlog.Machine
     {
         public static Program Compile(ImmutableArray<Rule> program)
         {
-            var atoms = program
+            var symbols = program
                 .Select(GetAtoms)
+                .Concat(program.Select(GetMessages))
+                .Concat(new[] { new[] { "\n", " := " } })
                 .Aggregate(Enumerable.Union)
                 .ToImmutableArray();
-            var atomsLookup = atoms
+            var symbolsLookup = symbols
                 .Select((x, i) => new KeyValuePair<string, int>(x, i))
                 .ToImmutableDictionary();
 
             var code = new List<Instruction>();
 
-            code.Add(new I.Call(atomsLookup["main"] << 8, 0));
+            code.Add(new I.Call(symbolsLookup["main"] << 8, 0));
             code.Add(new I.End());
 
             foreach (var group in program.GroupBy(r => r.Head.Name))
             {
-                code.AddRange(CompileProcedure(group, atomsLookup));
+                code.AddRange(CompileProcedure(group, symbolsLookup));
             }
 
-            return new Program(atoms, code.ToImmutableArray());
+            return new Program(symbols, code.ToImmutableArray());
         }
 
-        private static IEnumerable<Instruction> CompileProcedure(IEnumerable<Rule> clauses, ImmutableDictionary<string, int> atoms)
-            => clauses.SelectMany((rule, i) => CompileClause(rule, i, clauses.Count(), atoms));
+        private static IEnumerable<Instruction> CompileProcedure(IEnumerable<Rule> clauses, ImmutableDictionary<string, int> symbols)
+            => clauses.SelectMany((rule, i) => CompileClause(rule, i, clauses.Count(), symbols));
 
         private static IEnumerable<Instruction> CompileClause(
             Rule rule,
             int clauseNumber,
             int clauseCount,
-            ImmutableDictionary<string, int> atoms
+            ImmutableDictionary<string, int> symbols
         )
         {
             if (clauseCount > 256)
@@ -47,7 +49,7 @@ namespace Amateurlog.Machine
                 throw new Exception();
             }
 
-            var labelId = (atoms[rule.Head.Name] << 8) | clauseNumber;
+            var labelId = (symbols[rule.Head.Name] << 8) | clauseNumber;
             yield return new I.Label(labelId);
 
             if (clauseCount > 1)
@@ -76,13 +78,13 @@ namespace Amateurlog.Machine
             foreach (var (arg, argNum) in rule.Head.Args.Select((x, i) => (x, i)))
             {
                 yield return new I.LoadArg(argNum);
-                foreach (var i in MatchTerm(arg, atoms, variables))
+                foreach (var i in MatchTerm(arg, symbols, variables))
                 {
                     yield return i;
                 }
             }
 
-            foreach (var i in rule.Body.SelectMany(goal => CallPredicate(goal, atoms, variables)))
+            foreach (var i in rule.Body.SelectMany(goal => CallPredicate(goal, symbols, variables)))
             {
                 yield return i;
             }
@@ -117,7 +119,7 @@ namespace Amateurlog.Machine
         // and pop the address from the stack
         private static IEnumerable<Instruction> MatchTerm(
             Term term,
-            ImmutableDictionary<string, int> atoms,
+            ImmutableDictionary<string, int> symbols,
             ImmutableDictionary<string, int> variables
         ) => term
             .SelfAndDescendants()
@@ -128,7 +130,7 @@ namespace Amateurlog.Machine
                         new Instruction[]
                         {
                             new I.Dup(),
-                            new I.GetObject(atoms[p.Name], p.Args.Length),
+                            new I.GetObject(symbols[p.Name], p.Args.Length),
                             new I.StoreLocal(0),
                             new I.LoadLocal(0),
                             new I.Unify()
@@ -138,7 +140,7 @@ namespace Amateurlog.Machine
                                 .Reverse()
                                 .SelectMany(i => new Instruction[] { new I.LoadLocal(0), new I.LoadField(i) })
                         ),
-                    Atom a => new Instruction[] { new I.Dup(), new I.GetObject(atoms[a.Value], 0), new I.Unify() },
+                    Atom a => new Instruction[] { new I.Dup(), new I.GetObject(symbols[a.Value], 0), new I.Unify() },
                     Variable v => new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Unify() },
                     _ => throw new Exception()
                 }
@@ -146,17 +148,18 @@ namespace Amateurlog.Machine
 
         private static IEnumerable<Instruction> CallPredicate(
             Predicate goal,
-            ImmutableDictionary<string, int> atoms,
+            ImmutableDictionary<string, int> symbols,
             ImmutableDictionary<string, int> variables
         )
         {
             if (goal.Name == "dump")
             {
                 var variable = (Variable)goal.Args[0];
-                yield return new I.Write(variable.Name + " := ");
+                yield return new I.Write(symbols[variable.Name]);
+                yield return new I.Write(symbols[" := "]);
                 yield return new I.LoadLocal(variables[variable.Name]);
                 yield return new I.Dump();
-                yield return new I.Write(Environment.NewLine);
+                yield return new I.Write(symbols["\n"]);
                 yield break;
             }
 
@@ -164,13 +167,13 @@ namespace Amateurlog.Machine
             {
                 yield return new I.CreateVariable();
                 yield return new I.Dup();
-                foreach (var i in BuildTerm(arg, atoms, variables))
+                foreach (var i in BuildTerm(arg, symbols, variables))
                 {
                     yield return i;
                 }
             }
 
-            yield return new I.Call(atoms[goal.Name] << 8, goal.Args.Length);
+            yield return new I.Call(symbols[goal.Name] << 8, goal.Args.Length);
         }
 
         // With (the address of) an unbound variable on the stack,
@@ -178,7 +181,7 @@ namespace Amateurlog.Machine
         // address from the stack
         private static IEnumerable<Instruction> BuildTerm(
             Term term,
-            ImmutableDictionary<string, int> atoms,
+            ImmutableDictionary<string, int> symbols,
             ImmutableDictionary<string, int> variables
         ) => term
             .SelfAndDescendants()
@@ -188,7 +191,7 @@ namespace Amateurlog.Machine
                     Predicate p =>
                         new Instruction[]
                         {
-                            new I.CreateObject(atoms[p.Name], p.Args.Length),
+                            new I.CreateObject(symbols[p.Name], p.Args.Length),
                             new I.StoreLocal(0),
                             new I.LoadLocal(0),
                             new I.Bind()
@@ -197,7 +200,7 @@ namespace Amateurlog.Machine
                                 .Reverse()
                                 .SelectMany(i => new Instruction[] { new I.LoadLocal(0), new I.LoadField(i) })
                         ),
-                    Atom a => new Instruction[] { new I.CreateObject(atoms[a.Value], 0), new I.Bind() },
+                    Atom a => new Instruction[] { new I.CreateObject(symbols[a.Value], 0), new I.Bind() },
                     Variable v => new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Bind() },
                     _ => throw new Exception()
                 }
@@ -221,5 +224,12 @@ namespace Amateurlog.Machine
                 .Where(name => name != null)
                 .Distinct()
                 .OrderBy(x => x);
+
+        private static IEnumerable<string> GetMessages(Rule rule)
+            => rule.Body
+                .Where(p => p.Name == "dump")
+                .SelectMany(p => p.Args)
+                .Cast<Variable>()
+                .Select(v => v.Name);
     }
 }
