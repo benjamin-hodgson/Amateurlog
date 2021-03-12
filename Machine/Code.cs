@@ -47,6 +47,6 @@ namespace Amateurlog.Machine
 
         // [..., X] -> X
         public record Dump() : Instruction;
-        public record Print(string msg) : Instruction;
+        public record Write(string msg) : Instruction;
     }
 }

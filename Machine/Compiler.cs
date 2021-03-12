@@ -153,10 +153,10 @@ namespace Amateurlog.Machine
             if (goal.Name == "dump")
             {
                 var variable = (Variable)goal.Args[0];
-                yield return new I.Print(variable.Name + " := ");
+                yield return new I.Write(variable.Name + " := ");
                 yield return new I.LoadLocal(variables[variable.Name]);
                 yield return new I.Dump();
-                yield return new I.Print(Environment.NewLine);
+                yield return new I.Write(Environment.NewLine);
                 yield break;
             }
 

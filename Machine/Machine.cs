@@ -52,14 +52,14 @@ namespace Amateurlog.Machine
                     _stackHeight = _frame <= _lastChoice - 6
                         ? _lastChoice  // there's been a choice since this frame was pushed
                         : _stack[_frame - 3];
-                    _instructionPointer = _stack[_frame - 2];
-                    _frame = _stack[_frame - 1];
+                    _instructionPointer = _stack[_frame - 1];
+                    _frame = _stack[_frame - 2];
                     return;
                 
                 case I.Call(var instr, var argCount):
                     Push(_stackHeight - argCount);
-                    Push(_instructionPointer + 1);
                     Push(_frame);
+                    Push(_instructionPointer + 1);
                     _frame = _stackHeight;
                     _instructionPointer = instr;
                     return;
@@ -236,7 +236,7 @@ namespace Amateurlog.Machine
                     return;
                 }
 
-                case I.Print(var msg):
+                case I.Write(var msg):
                     Console.Write(msg);
                     _instructionPointer++;
                     return;
