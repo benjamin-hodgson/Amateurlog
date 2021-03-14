@@ -11,8 +11,11 @@ namespace Amateurlog.Machine
         private int _topOfHeap = 0;
 
         private readonly int[] _stack = new int[160000];
-        private int _frame = 0;
-        private int _stackHeight = 0;
+        // points at the frame tag
+        private int _frameBase = 0;
+        // points at the data on top of the stack
+        private int _topOfStack = -1;
+        // points at the catch instruction
         private int _lastChoice = -1;
 
         private readonly int[] _trail = new int[160000];
@@ -44,23 +47,23 @@ namespace Amateurlog.Machine
 
                 case I.Allocate(var slotCount):
                     Push(0);
-                    _stackHeight += slotCount;
+                    _topOfStack += slotCount;
                     _instructionPointer++;
                     return;
 
                 case I.Return:
-                    _stackHeight = _frame <= _lastChoice - 6
+                    _topOfStack = _frameBase < _lastChoice - 5
                         ? _lastChoice  // there's been a choice since this frame was pushed
-                        : _stack[_frame - 3];
-                    _instructionPointer = _stack[_frame - 1];
-                    _frame = _stack[_frame - 2];
+                        : _stack[_frameBase - 3];
+                    _instructionPointer = _stack[_frameBase - 1];
+                    _frameBase = _stack[_frameBase - 2];
                     return;
                 
                 case I.Call(var instr, var argCount):
-                    Push(_stackHeight - argCount);
-                    Push(_frame);
+                    Push(_topOfStack - argCount);
+                    Push(_frameBase);
                     Push(_instructionPointer + 1);
-                    _frame = _stackHeight;
+                    _frameBase = _topOfStack + 1;
                     _instructionPointer = instr;
                     return;
 
@@ -68,66 +71,68 @@ namespace Amateurlog.Machine
                     Push(1);
                     Push(_lastChoice);
                     Push(_trailLength);
-                    Push(_frame);
+                    Push(_frameBase);
                     Push(_topOfHeap);
                     Push(catchInstr);
-                    _lastChoice = _stackHeight;
+                    _lastChoice = _topOfStack;
                     _instructionPointer++;
                     return;
 
                 case I.Catch(var catchInstr):
-                    _topOfHeap = _stack[_lastChoice - 2];
-                    _frame = _stack[_lastChoice - 3];
+                    _topOfHeap = _stack[_lastChoice - 1];
+                    _frameBase = _stack[_lastChoice - 2];
                     // undo the trail
-                    while (_trailLength > _stack[_lastChoice - 4])
+                    while (_trailLength > _stack[_lastChoice - 3])
                     {
                         _trailLength--;
                         var addr = _trail[_trailLength];
                         _heap[addr + 1] = addr;
                     }
-                    _stackHeight = _lastChoice;
-                    _stack[_lastChoice - 1] = catchInstr;
+                    _topOfStack = _lastChoice;
+                    _stack[_lastChoice] = catchInstr;
                     _instructionPointer++;
                     return;
 
                 case I.CatchAll:
-                    _topOfHeap = _stack[_lastChoice - 2];
-                    _frame = _stack[_lastChoice - 3];
+                    _topOfHeap = _stack[_lastChoice - 1];
+                    _frameBase = _stack[_lastChoice - 2];
                     // undo the trail
-                    while (_trailLength > _stack[_lastChoice - 4])
+                    while (_trailLength > _stack[_lastChoice - 3])
                     {
                         _trailLength--;
                         var addr = _trail[_trailLength];
                         _heap[addr + 1] = addr;
                     }
-                    _stackHeight = _lastChoice - 6;
-                    _lastChoice = _stack[_lastChoice - 5];
+                    _topOfStack = _lastChoice - 6;
+                    _lastChoice = _stack[_lastChoice - 4];
                     _instructionPointer++;
                     return;
 
                 case I.StoreLocal(var slot):
                 {
-                    var argsOffset = _stack[_frame] == 0 ? 1 : 7;
-                    _stack[_frame + argsOffset + slot] = Pop();
+                    // if there was a choice point at the start of this function,
+                    // the locals are on top of the choice point
+                    var localsOffset = _stack[_frameBase] == 0 ? 1 : 7;
+                    _stack[_frameBase + localsOffset + slot] = Pop();
                     _instructionPointer++;
                     return;
                 }
 
                 case I.LoadLocal(var slot):
                 {
-                    var argsOffset = _stack[_frame] == 0 ? 1 : 7;
-                    Push(_stack[_frame + argsOffset + slot]);
+                    var localsOffset = _stack[_frameBase] == 0 ? 1 : 7;
+                    Push(_stack[_frameBase + localsOffset + slot]);
                     _instructionPointer++;
                     return;
                 }
 
                 case I.LoadArg(var argNumber):
-                    Push(_stack[_frame - 4 - argNumber]);
+                    Push(_stack[_frameBase - 4 - argNumber]);
                     _instructionPointer++;
                     return;
 
                 case I.Dup:
-                    Push(_stack[_stackHeight - 1]);
+                    Push(_stack[_topOfStack]);
                     _instructionPointer++;
                     return;
                 
@@ -218,8 +223,8 @@ namespace Amateurlog.Machine
                 {
                     var right = Pop();
                     var left = Pop();
-                    Push(_frame);
-                    _frame = _stackHeight;
+                    Push(_frameBase);
+                    _frameBase = _topOfStack + 1;
                     Push(left);
                     Push(right);
                     
@@ -231,7 +236,7 @@ namespace Amateurlog.Machine
                         return;
                     }
 
-                    _frame = Pop();
+                    _frameBase = Pop();
                     _instructionPointer++;
                     return;
                 }
@@ -253,7 +258,7 @@ namespace Amateurlog.Machine
 
         private bool Unify()
         {
-            while (_stackHeight > _frame)
+            while (_topOfStack >= _frameBase)
             {
                 var address1 = Deref(Pop());
                 var address2 = Deref(Pop());
@@ -301,7 +306,7 @@ namespace Amateurlog.Machine
 
             void _Bind(int a1, int a2)
             {
-                if (_lastChoice > 0 && a1 < _stack[_lastChoice - 2])
+                if (_lastChoice >= 0 && a1 < _stack[_lastChoice - 1])
                 {
                     _trail[_trailLength] = a1;
                     _trailLength++;
@@ -325,9 +330,9 @@ namespace Amateurlog.Machine
 
         private void Backtrack()
         {
-            if (_lastChoice > 0)
+            if (_lastChoice >= 0)
             {
-                _instructionPointer = _stack[_lastChoice - 1];
+                _instructionPointer = _stack[_lastChoice];
             }
             else
             {
@@ -337,13 +342,13 @@ namespace Amateurlog.Machine
 
         private void Push(int data)
         {
-            _stack[_stackHeight] = data;
-            _stackHeight++;
+            _topOfStack++;
+            _stack[_topOfStack] = data;
         }
         private int Pop()
         {
-            _stackHeight--;
-            var result = _stack[_stackHeight];
+            var result = _stack[_topOfStack];
+            _topOfStack--;
             return result;
         }
 
