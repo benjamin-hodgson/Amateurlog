@@ -52,18 +52,27 @@ namespace Amateurlog.Machine
                     return;
 
                 case I.Return:
-                    _topOfStack = _frameBase < _lastChoice - 5
-                        ? _lastChoice  // there's been a choice since this frame was pushed
-                        : _stack[_frameBase - 3];
-                    _instructionPointer = _stack[_frameBase - 1];
-                    _frameBase = _stack[_frameBase - 2];
+                {
+                    if (_frameBase < _lastChoice - 5)
+                    {
+                        // there's been a choice since this frame was pushed
+                        _topOfStack = _lastChoice;
+                    }
+                    else
+                    {
+                        _topOfStack = _stack[_frameBase - 3];
+                    }
+                    var tmp = _frameBase;
+                    _frameBase = _stack[tmp - 2];
+                    _instructionPointer = _stack[tmp - 1];
                     return;
+                }
                 
                 case I.Call(var instr, var argCount):
                     Push(_topOfStack - argCount);
                     Push(_frameBase);
+                    _frameBase = _topOfStack + 2;
                     Push(_instructionPointer + 1);
-                    _frameBase = _topOfStack + 1;
                     _instructionPointer = instr;
                     return;
 
