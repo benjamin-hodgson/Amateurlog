@@ -18,9 +18,9 @@ namespace Amateurlog.Machine
         public record LoadField(int fieldNum) : Instruction;
 
         // [..., X] -> [...]
-        public record StoreLocal(int slot) : Instruction;
+        public record StoreLocal(int slot, bool hasChoice) : Instruction;
         // [...] -> [..., X]
-        public record LoadLocal(int slot) : Instruction;
+        public record LoadLocal(int slot, bool hasChoice) : Instruction;
         // [...] => [..., X]
         public record LoadArg(int arg) : Instruction;
         // [..., X] -> [..., X, X]

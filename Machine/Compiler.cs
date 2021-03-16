@@ -52,23 +52,27 @@ namespace Amateurlog.Machine
             var labelId = (symbols[rule.Head.Name] << 8) | clauseNumber;
             yield return new I.Label(labelId);
 
+            var hasChoice = false;
             if (clauseCount > 1)
             {
                 if (clauseNumber == 0)
                 {
                     yield return new I.Try(labelId + 1);
+                    hasChoice = true;
                 }
                 else if (clauseNumber == clauseCount - 1)
                 {
                     yield return new I.CatchAll();
+                    hasChoice = false;
                 }
                 else
                 {
                     yield return new I.Catch(labelId + 1);
+                    hasChoice = true;
                 }
             }
 
-            var (variables, preamble) = AllocateVariables(rule.Body.Concat(new[]{rule.Head}));
+            var (variables, preamble) = AllocateVariables(rule.Body.Concat(new[]{rule.Head}), hasChoice);
 
             foreach (var i in preamble)
             {
@@ -78,13 +82,13 @@ namespace Amateurlog.Machine
             foreach (var (arg, argNum) in rule.Head.Args.Select((x, i) => (x, i)))
             {
                 yield return new I.LoadArg(argNum);
-                foreach (var i in MatchTerm(arg, symbols, variables))
+                foreach (var i in MatchTerm(arg, symbols, variables, hasChoice))
                 {
                     yield return i;
                 }
             }
 
-            foreach (var i in rule.Body.SelectMany(goal => CallPredicate(goal, symbols, variables)))
+            foreach (var i in rule.Body.SelectMany(goal => CallPredicate(goal, symbols, variables, hasChoice)))
             {
                 yield return i;
             }
@@ -92,7 +96,7 @@ namespace Amateurlog.Machine
             yield return new I.Return();
         }
 
-        private static (ImmutableDictionary<string, int>, IEnumerable<Instruction>) AllocateVariables(IEnumerable<Term> terms)
+        private static (ImmutableDictionary<string, int>, IEnumerable<Instruction>) AllocateVariables(IEnumerable<Term> terms, bool hasChoice)
         {
             var variables = terms
                 .SelectMany(t => t.Variables())
@@ -108,7 +112,7 @@ namespace Amateurlog.Machine
                 for (var i = 1; i < variables.Count + 1; i++)
                 {
                     yield return new I.CreateVariable();
-                    yield return new I.StoreLocal(i);
+                    yield return new I.StoreLocal(i, hasChoice);
                 }
             }
             return (variables, Code());
@@ -120,7 +124,8 @@ namespace Amateurlog.Machine
         private static IEnumerable<Instruction> MatchTerm(
             Term term,
             ImmutableDictionary<string, int> symbols,
-            ImmutableDictionary<string, int> variables
+            ImmutableDictionary<string, int> variables,
+            bool hasChoice
         ) => term
             .SelfAndDescendants()
             .SelectMany(x =>
@@ -131,17 +136,17 @@ namespace Amateurlog.Machine
                         {
                             new I.Dup(),
                             new I.GetObject(symbols[p.Name], p.Args.Length),
-                            new I.StoreLocal(0),
-                            new I.LoadLocal(0),
+                            new I.StoreLocal(0, hasChoice),
+                            new I.LoadLocal(0, hasChoice),
                             new I.Unify()
                         }.Concat(
                             Enumerable
                                 .Range(0, p.Args.Length)
                                 .Reverse()
-                                .SelectMany(i => new Instruction[] { new I.LoadLocal(0), new I.LoadField(i) })
+                                .SelectMany(i => new Instruction[] { new I.LoadLocal(0, hasChoice), new I.LoadField(i) })
                         ),
                     Atom a => new Instruction[] { new I.Dup(), new I.GetObject(symbols[a.Value], 0), new I.Unify() },
-                    Variable v => new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Unify() },
+                    Variable v => new Instruction[] { new I.LoadLocal(variables[v.Name], hasChoice), new I.Unify() },
                     _ => throw new Exception()
                 }
             );
@@ -149,7 +154,8 @@ namespace Amateurlog.Machine
         private static IEnumerable<Instruction> CallPredicate(
             Predicate goal,
             ImmutableDictionary<string, int> symbols,
-            ImmutableDictionary<string, int> variables
+            ImmutableDictionary<string, int> variables,
+            bool hasChoice
         )
         {
             if (goal.Name == "dump")
@@ -157,7 +163,7 @@ namespace Amateurlog.Machine
                 var variable = (Variable)goal.Args[0];
                 yield return new I.Write(symbols[variable.Name]);
                 yield return new I.Write(symbols[" := "]);
-                yield return new I.LoadLocal(variables[variable.Name]);
+                yield return new I.LoadLocal(variables[variable.Name], hasChoice);
                 yield return new I.Dump();
                 yield return new I.Write(symbols["\n"]);
                 yield break;
@@ -167,7 +173,7 @@ namespace Amateurlog.Machine
             {
                 yield return new I.CreateVariable();
                 yield return new I.Dup();
-                foreach (var i in BuildTerm(arg, symbols, variables))
+                foreach (var i in BuildTerm(arg, symbols, variables, hasChoice))
                 {
                     yield return i;
                 }
@@ -182,7 +188,8 @@ namespace Amateurlog.Machine
         private static IEnumerable<Instruction> BuildTerm(
             Term term,
             ImmutableDictionary<string, int> symbols,
-            ImmutableDictionary<string, int> variables
+            ImmutableDictionary<string, int> variables,
+            bool hasChoice
         ) => term
             .SelfAndDescendants()
             .SelectMany(x =>
@@ -192,16 +199,16 @@ namespace Amateurlog.Machine
                         new Instruction[]
                         {
                             new I.CreateObject(symbols[p.Name], p.Args.Length),
-                            new I.StoreLocal(0),
-                            new I.LoadLocal(0),
+                            new I.StoreLocal(0, hasChoice),
+                            new I.LoadLocal(0, hasChoice),
                             new I.Bind()
                         }.Concat(
                             Enumerable.Range(0, p.Args.Length)
                                 .Reverse()
-                                .SelectMany(i => new Instruction[] { new I.LoadLocal(0), new I.LoadField(i) })
+                                .SelectMany(i => new Instruction[] { new I.LoadLocal(0, hasChoice), new I.LoadField(i) })
                         ),
                     Atom a => new Instruction[] { new I.CreateObject(symbols[a.Value], 0), new I.Bind() },
-                    Variable v => new Instruction[] { new I.LoadLocal(variables[v.Name]), new I.Bind() },
+                    Variable v => new Instruction[] { new I.LoadLocal(variables[v.Name], hasChoice), new I.Bind() },
                     _ => throw new Exception()
                 }
             );

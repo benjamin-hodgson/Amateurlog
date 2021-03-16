@@ -11,8 +11,8 @@ namespace Amateurlog.Machine
         private int _topOfHeap = 0;
 
         private readonly int[] _stack = new int[160000];
-        // points at the frame tag
-        private int _frameBase = 0;
+        // points at the return address
+        private int _frameBase = -1;
         // points at the data on top of the stack
         private int _topOfStack = -1;
         // points at the catch instruction
@@ -46,38 +46,36 @@ namespace Amateurlog.Machine
                     return;
 
                 case I.Allocate(var slotCount):
-                    Push(0);
                     _topOfStack += slotCount;
                     _instructionPointer++;
                     return;
 
                 case I.Return:
                 {
-                    if (_frameBase < _lastChoice - 5)
+                    if (_frameBase < _lastChoice - 4)
                     {
                         // there's been a choice since this frame was pushed
                         _topOfStack = _lastChoice;
                     }
                     else
                     {
-                        _topOfStack = _stack[_frameBase - 3];
+                        _topOfStack = _stack[_frameBase - 2];
                     }
                     var tmp = _frameBase;
-                    _frameBase = _stack[tmp - 2];
-                    _instructionPointer = _stack[tmp - 1];
+                    _frameBase = _stack[tmp - 1];
+                    _instructionPointer = _stack[tmp];
                     return;
                 }
                 
                 case I.Call(var instr, var argCount):
                     Push(_topOfStack - argCount);
                     Push(_frameBase);
-                    _frameBase = _topOfStack + 2;
+                    _frameBase = _topOfStack + 1;
                     Push(_instructionPointer + 1);
                     _instructionPointer = instr;
                     return;
 
                 case I.Try(var catchInstr):
-                    Push(1);
                     Push(_lastChoice);
                     Push(_trailLength);
                     Push(_frameBase);
@@ -112,31 +110,33 @@ namespace Amateurlog.Machine
                         var addr = _trail[_trailLength];
                         _heap[addr + 1] = addr;
                     }
-                    _topOfStack = _lastChoice - 6;
+                    _topOfStack = _lastChoice - 5;
                     _lastChoice = _stack[_lastChoice - 4];
                     _instructionPointer++;
                     return;
 
-                case I.StoreLocal(var slot):
+                case I.StoreLocal(var slot, bool hasChoice):
                 {
                     // if there was a choice point at the start of this function,
                     // the locals are on top of the choice point
-                    var localsOffset = _stack[_frameBase] == 0 ? 1 : 7;
-                    _stack[_frameBase + localsOffset + slot] = Pop();
+                    var offset = (hasChoice ? 6 : 1) + slot;
+                    _stack[_frameBase + offset] = Pop();
                     _instructionPointer++;
                     return;
                 }
 
-                case I.LoadLocal(var slot):
+                case I.LoadLocal(var slot, bool hasChoice):
                 {
-                    var localsOffset = _stack[_frameBase] == 0 ? 1 : 7;
-                    Push(_stack[_frameBase + localsOffset + slot]);
+                    // if there was a choice point at the start of this function,
+                    // the locals are on top of the choice point
+                    var offset = (hasChoice ? 6 : 1) + slot;
+                    Push(_stack[_frameBase + offset]);
                     _instructionPointer++;
                     return;
                 }
 
                 case I.LoadArg(var argNumber):
-                    Push(_stack[_frameBase - 4 - argNumber]);
+                    Push(_stack[_frameBase - 3 - argNumber]);
                     _instructionPointer++;
                     return;
 
@@ -233,7 +233,7 @@ namespace Amateurlog.Machine
                     var right = Pop();
                     var left = Pop();
                     Push(_frameBase);
-                    _frameBase = _topOfStack + 1;
+                    _frameBase = _topOfStack;
                     Push(left);
                     Push(right);
                     
@@ -267,7 +267,7 @@ namespace Amateurlog.Machine
 
         private bool Unify()
         {
-            while (_topOfStack >= _frameBase)
+            while (_topOfStack > _frameBase)
             {
                 var address1 = Deref(Pop());
                 var address2 = Deref(Pop());
