@@ -8,7 +8,7 @@ namespace Amateurlog.Machine
     static class Backend
     {
         private const string TopOfHeap = "rax";
-        private const string TopOfTrail = "rcx";
+        private const string TrailLength = "rcx";
         private const string BottomOfTrail = "rsi";
         private const string TopOfStack = "rsp";
         private const string FrameBase = "rbp";
@@ -35,6 +35,7 @@ namespace Amateurlog.Machine
                         yield break;
 
                     case I.Return:
+                    {
                         var @else = UniqueName("else");
                         var end = UniqueName("end");
                         
@@ -52,12 +53,92 @@ namespace Amateurlog.Machine
                         yield return Mov(FrameBase, StackLocation(Scratch1, -1));    // _frameBase = _stack[tmp - 1]
                         yield return Jmp($"[{Scratch1}]");                           // _instructionPointer = _stack[tmp]
                         yield break;
+                    }
 
                     case I.End:
                         yield return And(TopOfStack, -16);  // align stack
                         yield return Mov(Scratch1, 0);
                         yield return Call("_exit");
                         yield break;
+
+                    case I.Allocate(var slotCount):
+                        yield return Sub(TopOfStack, slotCount);  // topOfStack += slotCount;
+                        yield break;
+
+                    case I.Try(var id):
+                        yield return Push(LastChoice);              // Push(_lastChoice);
+                        yield return Push(TrailLength);             // Push(_trailLength);
+                        yield return Push(FrameBase);               // Push(_frameBase);
+                        yield return Push(TopOfHeap);               // Push(_topOfHeap);
+                        yield return Mov(Scratch1, LabelName(id));  // Push(catchInstr);
+                        yield return Push(Scratch1);                //
+                        yield return Mov(LastChoice, TopOfStack);   // _lastChoice = _topOfStack;
+                        yield break;
+
+                    case I.Catch(var id):
+                    {
+                        var @while = UniqueName("while");
+                        var end = UniqueName("end");
+
+                        yield return Mov(TopOfHeap, StackLocation(LastChoice, -1));            // _topOfHeap = _stack[_lastChoice - 1];
+                        yield return Mov(FrameBase, StackLocation(LastChoice, -2));            // _frameBase = _stack[_lastChoice - 2];
+                                                                                               // // undo the trail
+                        yield return Label(@while);                                            // while
+                        yield return Cmp(TrailLength, StackLocation(LastChoice, -3));          //       (_trailLength > _stack[_lastChoice - 3])
+                        yield return Jle(end);                                                 // {
+                        yield return Dec(TrailLength);                                         //     _trailLength--;
+                        yield return Mov(Scratch1, $"[{BottomOfTrail} + {TrailLength} * 8]");  //     var addr = _trail[_trailLength];
+                        yield return Mov($"[{Scratch1} + 8]", Scratch1);                       //     _heap[addr + 1] = addr;
+                        yield return Jmp(@while);                                              // }
+                        yield return Label(end);                                               //
+                                                                                               // 
+                        yield return Mov(TopOfStack, LastChoice);                              // _topOfStack = _lastChoice;
+                        yield return Mov($"[{LastChoice}]", id);                               // _stack[_lastChoice] = catchInstr;
+                        yield break;
+                    }
+
+                    case I.CatchAll:
+                    {
+                        var @while = UniqueName("while");
+                        var end = UniqueName("end");
+
+                        yield return Mov(TopOfHeap, StackLocation(LastChoice, -1));            // _topOfHeap = _stack[_lastChoice - 1];
+                        yield return Mov(FrameBase, StackLocation(LastChoice, -2));            // _frameBase = _stack[_lastChoice - 2];
+                                                                                               // // undo the trail
+                        yield return Label(@while);                                            // while
+                        yield return Cmp(TrailLength, StackLocation(LastChoice, -3));          //       (_trailLength > _stack[_lastChoice - 3])
+                        yield return Jle(end);                                                 // {
+                        yield return Dec(TrailLength);                                         //     _trailLength--;
+                        yield return Mov(Scratch1, $"[{BottomOfTrail} + {TrailLength} * 8]");  //     var addr = _trail[_trailLength];
+                        yield return Mov($"[{Scratch1} + 8]", Scratch1);                       //     _heap[addr + 1] = addr;
+                        yield return Jmp(@while);                                              // }
+                        yield return Label(end);                                               //
+                                                                                               // 
+                        yield return Lea(TopOfStack, StackLocation(LastChoice, -5));           // _topOfStack = _lastChoice - 5;
+                        yield return Mov(LastChoice, StackLocation(LastChoice, -4));           // _lastChoice = _stack[_lastChoice - 4];
+                        yield break;
+                    }
+
+
+                    case I.Write(var msg):
+                    {
+                        string addr;
+                        if (program.Symbols[msg] == " := ")
+                        {
+                            addr = "__equalsSign";
+                        }
+                        else if (program.Symbols[msg] == "\n")
+                        {
+                            addr = "__newline";
+                        }
+                        else
+                        {
+                            addr = $"[__symbolTable + {msg * 8}]";
+                        }
+                        yield return Mov(Scratch1, addr);
+                        yield return Call("Write");
+                        yield break;
+                    }
 
                     default:
                         yield break;
@@ -79,7 +160,7 @@ default rel
 section .data
 {string.Join("\n", textSymbols.Select(x => $"    __symbol_{x}: db \"{x}\", 0"))}
     __equalsSign: db "" := "", 0
-    __newline: db ""\n"", 0
+    __newline: db 0x0A, 0
     __openParen: db ""("", 0
     __closeParen: db "")"", 0
     __comma: db "", "", 0
@@ -104,7 +185,7 @@ section .text
         mov rdi, 640000    ; 640k of heap space please
         call _malloc       ; top of heap in rax 
 
-        mov rcx, rsi       ; top of trail
+        mov rcx, 0         ; trail length
         lea rdx, [rsp + 8] ; last choice
 
         jmp Prolog
@@ -154,6 +235,12 @@ section .text
             return $"[{@base} {sign} {Math.Abs(offsetWords) * 8}]";
         }
 
+        private static string Add(params object[] args)
+            => Instruction("add", args);
+        private static string Sub(params object[] args)
+            => Instruction("sub", args);
+        private static string Dec(string arg)
+            => Instruction("dec", arg);
         private static string And(params object[] args)
             => Instruction("and", args);
         private static string Mov(params object[] args)
