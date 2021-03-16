@@ -30,7 +30,7 @@ namespace Amateurlog.Machine
                         yield return Lea(Scratch1, StackLocation(-argCount));  // Push(_topOfStack - argCount);
                         yield return Push(Scratch1);                           //
                         yield return Push(FrameBase);                          // Push(_frameBase);
-                        yield return Lea(FrameBase, StackLocation(2));         // _frameBase = _topOfStack + 2;
+                        yield return Lea(FrameBase, StackLocation(1));         // _frameBase = _topOfStack + 1;
                         yield return Call(LabelName(id));                      // Push(_instructionPointer + 1); _instructionPointer = instr
                         yield break;
 
@@ -38,7 +38,7 @@ namespace Amateurlog.Machine
                         var @else = UniqueName("else");
                         var end = UniqueName("end");
                         
-                        yield return Lea(Scratch1, StackLocation(LastChoice, -5));   // if (_frameBase < _lastChoice - 5) {
+                        yield return Lea(Scratch1, StackLocation(LastChoice, -4));   // if (_frameBase < _lastChoice - 4) {
                         yield return Cmp(FrameBase, Scratch1);                       //
                         // jle and not jge because stack grows down                  //
                         // (this is an inverted if statement)                        //
@@ -46,17 +46,17 @@ namespace Amateurlog.Machine
                         yield return Mov(TopOfStack, LastChoice);                    //     _topOfStack = _lastChoice;
                         yield return Jmp(end);                                       // }
                         yield return Label(@else);                                   // else {
-                        yield return Mov(TopOfStack, StackLocation(FrameBase, -3));  //     _topOfStack = _stack[_frameBase - 3];
+                        yield return Mov(TopOfStack, StackLocation(FrameBase, -2));  //     _topOfStack = _stack[_frameBase - 2];
                         yield return Label(end);                                     // }
                         yield return Mov(Scratch1, FrameBase);                       // var tmp = _frameBase;
-                        yield return Mov(FrameBase, StackLocation(Scratch1, -2));    // _frameBase = _stack[tmp - 2]
-                        yield return Jmp(StackLocation(Scratch1, -1));               // _instructionPointer = _stack[tmp - 1]
+                        yield return Mov(FrameBase, StackLocation(Scratch1, -1));    // _frameBase = _stack[tmp - 1]
+                        yield return Jmp($"[{Scratch1}]");                           // _instructionPointer = _stack[tmp]
                         yield break;
 
                     case I.End:
-                        yield return Mov(TopOfStack, FrameBase);
-                        yield return Pop(FrameBase);
-                        yield return Ret();
+                        yield return And(TopOfStack, -16);  // align stack
+                        yield return Mov(Scratch1, 0);
+                        yield return Call("_exit");
                         yield break;
 
                     default:
@@ -90,6 +90,7 @@ section .text
     extern _printf
     extern _malloc
     extern _free
+    extern _exit
     global _main
 
     _main:
@@ -98,31 +99,15 @@ section .text
 
         mov rdi, 16000     ; 16k of trail space please
         call _malloc
-        push rax           ; save trail pointer
-        mov rsi, rax
+        mov rsi, rax       ; bottom of trail
 
-        sub rsp, 8         ; align stack
         mov rdi, 640000    ; 640k of heap space please
-        call _malloc
-        add rsp, 8         ; unalign stack
-        push rax           ; save heap pointer
+        call _malloc       ; top of heap in rax 
 
         mov rcx, rsi       ; top of trail
         lea rdx, [rsp + 8] ; last choice
 
-        call Prolog
-
-        pop rdi
-        sub rsp, 8         ; align stack
-        call _free         ; free trail
-        add rsp, 8         ; unalign stack
-
-        pop rdi
-        call _free         ; free heap
-
-        mov rsp, rbp
-        pop rbp
-        ret
+        jmp Prolog
 
     Write:  ; write the null-terminated string in rdi
         push rbp
@@ -169,6 +154,8 @@ section .text
             return $"[{@base} {sign} {Math.Abs(offsetWords) * 8}]";
         }
 
+        private static string And(params object[] args)
+            => Instruction("and", args);
         private static string Mov(params object[] args)
             => Instruction("mov", args);
         private static string Lea(params object[] args)
