@@ -4,12 +4,19 @@ using Amateurlog;
 using Amateurlog.Machine;
 
 var source = @"
+    set(X, X).
+
     last(cons(X, nil), X).
     last(cons(X, Xs), R) :- last(Xs, R).
 
+    first(cons(X, Y), X).
+
     main() :-
-        last(cons(baz, nil), X),
-        dump(X).
+        set(cons(foo, cons(baz, nil)), List),
+        last(List, X),
+        first(List, Y),
+        dump(X),
+        dump(Y).
 ";
 var ast = PrologParser.ParseProgram(source);
 var program = Compiler.Compile(ast);

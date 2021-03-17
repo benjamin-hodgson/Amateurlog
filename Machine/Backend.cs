@@ -9,13 +9,13 @@ namespace Amateurlog.Machine
     {
         private const string TopOfHeap = "rax";
         private const string TrailLength = "rcx";
-        private const string BottomOfTrail = "rsi";
+        private const string BottomOfTrail = "r9";
         private const string TopOfStack = "rsp";
         private const string FrameBase = "rbp";
         private const string LastChoice = "rdx";
         private const string Scratch1 = "rdi";
-        private const string Scratch2 = "r8";
-        private const string Scratch3 = "r9";
+        private const string Scratch2 = "rsi";
+        private const string Scratch3 = "r8";
 
         public static string Codegen(Program program)
         {
@@ -40,7 +40,9 @@ namespace Amateurlog.Machine
                         var @else = UniqueName("else");
                         var end = UniqueName("end");
                         
-                        yield return Lea(Scratch1, StackLocation(LastChoice, -4));   // if (_frameBase < _lastChoice - 4) {
+                        yield return Cmp(LastChoice, 0);                             // if (_lastChoice != 0
+                        yield return Je(@else);                                      //
+                        yield return Lea(Scratch1, StackLocation(LastChoice, -4));   //     && _frameBase < _lastChoice - 4) {
                         yield return Cmp(FrameBase, Scratch1);                       //
                         // jle and not jge because stack grows down                  //
                         // (this is an inverted if statement)                        //
@@ -256,6 +258,11 @@ namespace Amateurlog.Machine
                         yield break;
                     }
 
+                    case I.Dump:
+                        yield return Pop(Scratch1);
+                        yield return Call("Dump");
+                        yield break;
+
                     default:
                         yield break;
                 }
@@ -281,6 +288,7 @@ section .data
     __closeParen: db "")"", 0
     __comma: db "", "", 0
     __X: db ""X"", 0
+    __numberFmt: db ""%d"", 0
     __symbolTable: dq {string.Join(", ", textSymbols.Select(x => $"__symbol_{x}"))}
 
 
@@ -420,9 +428,89 @@ section .text
         cmp {LastChoice}, 0
         je Exit
         jmp [{LastChoice}]
+
+
+    Dump:
+        push rbp
+        mov rbp, rsp
+
+        push {Scratch1}
+        push qword 0
+
+    .while:
+        cmp {TopOfStack}, {FrameBase}
+        jge .end
+
+        pop {Scratch2}
+        mov {Scratch1}, .table
+        add {Scratch1}, {Scratch2}
+        jmp [{Scratch1}]
+
+    .table: dq .writeObj, .writeParen, .writeComma
+
+    .writeObj:
+        pop {Scratch1}
+        call Deref
+        mov {Scratch2}, {Scratch1}
+        cmp qword [{Scratch1}], 0
+        je .writeVar
+
+        mov {Scratch3}, [{Scratch2} + 8]
+        mov {Scratch1}, __symbolTable
+        mov {Scratch1}, [{Scratch1} + {Scratch3} * 8]
+        call Write
+
+        mov {Scratch3}, [{Scratch2} + 16]
+        cmp {Scratch3}, 0
+        je .while
+
+        mov {Scratch1}, __openParen
+        call Write
+        push qword 8
+        imul {Scratch3}, 2
+    .args:
+        cmp {Scratch3}, 0
+        jle .endargs
+        sub {Scratch3}, 2
+
+        lea {Scratch1}, [{Scratch2} + {Scratch3} * 8 + 24]
+        push {Scratch1}
+        push 0
+        push qword 16
+        jmp .args
+
+    .endargs:
+        add {TopOfStack}, 8
+        jmp .while
+
+    .writeVar:
+        mov {Scratch1}, __X
+        call Write
+
+        mov {Scratch1}, {TopOfHeap}
+        sub {Scratch1}, {Scratch2}
+        xchg {Scratch1}, {Scratch2}
+        mov {Scratch1}, __numberFmt
+        call Write
+
+        jmp .while
+
+    .writeParen:
+        mov {Scratch1}, __closeParen
+        call Write
+        jmp .while
+    .writeComma:
+        mov {Scratch1}, __comma
+        call Write
+        jmp .while
+
+    .end:
+        mov rsp, rbp
+        pop rbp
+        ret
         
     
-    Write:  ; write the null-terminated string in rdi
+    Write:  ; printf {Scratch1} and {Scratch2}
         push rbp
         mov rbp, rsp
 
@@ -435,6 +523,7 @@ section .text
         push {LastChoice}
         push {Scratch1}
         push {Scratch2}
+        push {Scratch3}
 
         push rbx
         ; align stack
@@ -448,6 +537,7 @@ section .text
         pop rbx
 
         ; restore registers
+        pop {Scratch3}
         pop {Scratch2}
         pop {Scratch1}
         pop {LastChoice}

@@ -365,27 +365,54 @@ namespace Amateurlog.Machine
 
         public void Dump(int address)
         {
-            address = Deref(address);
-            if (_heap[address] == 0)
+            Push(_frameBase);
+            _frameBase = _topOfStack;
+
+            Push(address);
+            Push(0);
+
+            while (_topOfStack > _frameBase)
             {
-                Console.Write("X");
-                Console.Write(address);
-                return;
+                var control = Pop();
+                switch (control)
+                {
+                    case 0:
+                        address = Deref(Pop());
+                        if (_heap[address] == 0)
+                        {
+                            Console.Write("X");
+                            Console.Write(address);
+                            continue;
+                        }
+                        var name = _program.Symbols[_heap[address + 1]];
+                        Console.Write(name);
+                        var length = _heap[address + 2];
+                        if (length == 0)
+                        {
+                            continue;
+                        }
+                        Console.Write("(");
+                        Push(1);  // ")"
+                        while (length > 0)
+                        {
+                            length--;
+                            Push(address + 3 + (length * 2));
+                            Push(0);
+                            Push(2);  // ", "
+                        }
+                        Pop();  // don't print the last comma
+                        continue;
+                    case 1:
+                        Console.Write(")");
+                        continue;
+                    case 2:
+                        Console.Write(", ");
+                        continue;
+                }
             }
-            var name = _program.Symbols[_heap[address + 1]];
-            var length = _heap[address + 2];
-            if (length == 0)
-            {
-                Console.Write(name);
-                return;
-            }
-            Console.Write(name);
-            Console.Write("(");
-            for (var i = 0; i < length; i++)
-            {
-                Dump(address + 3 + (i * 2));
-            }
-            Console.Write(")");
+
+            _topOfStack = _frameBase;
+            _frameBase = Pop();
         }
     }
 }
