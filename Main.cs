@@ -8,26 +8,30 @@ var source = @"
     last(cons(X, Xs), R) :- last(Xs, R).
 
     main() :-
-        last(cons(foo, cons(bar, cons(baz, nil))), X),
+        last(cons(baz, nil), X),
         dump(X).
 ";
 var ast = PrologParser.ParseProgram(source);
 var program = Compiler.Compile(ast);
 
 File.WriteAllText("prolog.asm", Backend.Codegen(program));
-Process.Start("nasm", new[] { "-f macho64", "-g", "-o prolog.o", "prolog.asm" });
-Process.Start(
-    "ld",
-    new[]
-    {
-        "-lSystem",
-        "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
-        "-arch", "x86_64",
-        "-o", "prolog",
-        "prolog.o"
-    }
-);
+Process
+    .Start("nasm", new[] { "-f macho64", "-g", "-o prolog.o", "prolog.asm" })
+    .WaitForExit();
+Process
+    .Start(
+        "ld",
+        new[]
+        {
+            "-lSystem",
+            "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
+            "-arch", "x86_64",
+            "-o", "prolog",
+            "prolog.o"
+        }
+    )
+    .WaitForExit();
 
-// var assembled = Assembler.Assemble(program);
-// var machine = new Machine(assembled);
-// machine.Run();
+var assembled = Assembler.Assemble(program);
+var machine = new Machine(assembled);
+machine.Run();

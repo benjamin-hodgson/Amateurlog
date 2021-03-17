@@ -232,12 +232,8 @@ namespace Amateurlog.Machine
                 {
                     var right = Pop();
                     var left = Pop();
-                    Push(_frameBase);
-                    _frameBase = _topOfStack;
-                    Push(left);
-                    Push(right);
                     
-                    var result = Unify();
+                    var result = Unify(left, right);
 
                     if (!result)
                     {
@@ -245,7 +241,6 @@ namespace Amateurlog.Machine
                         return;
                     }
 
-                    _frameBase = Pop();
                     _instructionPointer++;
                     return;
                 }
@@ -256,7 +251,7 @@ namespace Amateurlog.Machine
                     return;
 
                 case I.Dump:
-                    Console.Write(Dump(Pop()));
+                    Dump(Pop());
                     _instructionPointer++;
                     return;
 
@@ -265,8 +260,12 @@ namespace Amateurlog.Machine
             }
         }
 
-        private bool Unify()
+        private bool Unify(int left, int right)
         {
+            Push(_frameBase);
+            _frameBase = _topOfStack;
+            Push(left);
+            Push(right);
             while (_topOfStack > _frameBase)
             {
                 var address1 = Deref(Pop());
@@ -282,12 +281,16 @@ namespace Amateurlog.Machine
                     if (_heap[address1 + 1] != _heap[address2 + 1])
                     {
                         // different atoms
+                        _topOfStack = _frameBase;
+                        _frameBase = Pop();
                         return false;
                     }
                     var length1 =_heap[address1 + 2];
                     var length2 = _heap[address2 + 2];
                     if (length1 != length2)
                     {
+                        _topOfStack = _frameBase;
+                        _frameBase = Pop();
                         return false;
                     }
                     for (var i = 0; i < length1; i++)
@@ -297,6 +300,8 @@ namespace Amateurlog.Machine
                     }
                 }
             }
+            _topOfStack = _frameBase;
+            _frameBase = Pop();
             return true;
         }
 
@@ -313,28 +318,25 @@ namespace Amateurlog.Machine
         {
             (addr1, addr2) = (Math.Max(addr1, addr2), Math.Min(addr1, addr2));
 
-            void _Bind(int a1, int a2)
-            {
-                if (_lastChoice >= 0 && a1 < _stack[_lastChoice - 1])
-                {
-                    _trail[_trailLength] = a1;
-                    _trailLength++;
-                }
-                _heap[a1 + 1] = a2;
-            }
-
             if (_heap[addr1] == 0 && _heap[addr1 + 1] == addr1)
             {
-                _Bind(addr1, addr2);
+                // (addr1, addr2) = (addr1, addr2);
             }
             else if (_heap[addr2] == 0 && _heap[addr2 + 1] == addr2)
             {
-                _Bind(addr2, addr1);
+                (addr1, addr2) = (addr2, addr1);
             }
             else
             {
                 throw new Exception();
             }
+
+            if (_lastChoice >= 0 && addr1 < _stack[_lastChoice - 1])
+            {
+                _trail[_trailLength] = addr1;
+                _trailLength++;
+            }
+            _heap[addr1 + 1] = addr2;
         }
 
         private void Backtrack()
@@ -361,20 +363,29 @@ namespace Amateurlog.Machine
             return result;
         }
 
-        public string Dump(int address)
+        public void Dump(int address)
         {
             address = Deref(address);
             if (_heap[address] == 0)
             {
-                return "X" + address;
+                Console.Write("X");
+                Console.Write(address);
+                return;
             }
             var name = _program.Symbols[_heap[address + 1]];
             var length = _heap[address + 2];
             if (length == 0)
             {
-                return name;
+                Console.Write(name);
+                return;
             }
-            return name + "(" + string.Join(", ", Enumerable.Range(0, length).Select(x => Dump(address + 3 + (x * 2)))) + ")";
+            Console.Write(name);
+            Console.Write("(");
+            for (var i = 0; i < length; i++)
+            {
+                Dump(address + 3 + (i * 2));
+            }
+            Console.Write(")");
         }
     }
 }

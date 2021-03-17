@@ -13,8 +13,9 @@ namespace Amateurlog.Machine
         private const string TopOfStack = "rsp";
         private const string FrameBase = "rbp";
         private const string LastChoice = "rdx";
-        private const string Scratch1 = "rdi";  // also used as arg to Write
-        private const string Scratch2 = "rbx";  // callee-saved
+        private const string Scratch1 = "rdi";
+        private const string Scratch2 = "r8";
+        private const string Scratch3 = "r9";
 
         public static string Codegen(Program program)
         {
@@ -56,13 +57,11 @@ namespace Amateurlog.Machine
                     }
 
                     case I.End:
-                        yield return And(TopOfStack, -16);  // align stack
-                        yield return Mov(Scratch1, 0);
-                        yield return Call("_exit");
+                        yield return Jmp("Exit");
                         yield break;
 
                     case I.Allocate(var slotCount):
-                        yield return Sub(TopOfStack, slotCount);  // topOfStack += slotCount;
+                        yield return Sub(TopOfStack, slotCount * 8);  // topOfStack += slotCount;
                         yield break;
 
                     case I.Try(var id):
@@ -119,6 +118,123 @@ namespace Amateurlog.Machine
                         yield break;
                     }
 
+                    case I.StoreLocal(var slot, bool hasChoice):
+                    {
+                        var offset = (hasChoice ? 6 : 1) + slot;
+                        yield return Pop(StackLocation(FrameBase, offset));  // _stack[_frameBase + offset] = Pop();
+                        yield break;
+                    }
+                    case I.LoadLocal(var slot, bool hasChoice):
+                    {
+                        var offset = (hasChoice ? 6 : 1) + slot;
+                        yield return Push(StackLocation(FrameBase, offset));  // Push(_stack[_frameBase + offset]);
+                        yield break;
+                    }
+                    case I.LoadArg(var argNumber):
+                    {
+                        yield return Push(StackLocation(FrameBase, -(3 + argNumber)));  // Push(_stack[_frameBase - 3 - argNumber]);
+                        yield break;
+                    }
+                    case I.Dup:
+                    {
+                        yield return Push(StackLocation(0));  // Push(_stack[_topOfStack]);
+                        yield break;
+                    }
+                    case I.Pop:
+                    {
+                        yield return Add(TopOfStack, 8);  // Pop();
+                        yield break;
+                    }
+                        
+                    case I.CreateVariable:
+                        yield return Mov($"[{TopOfHeap}]", 0);              // _heap[_topOfHeap] = 0;
+                        yield return Mov($"[{TopOfHeap} + 8]", TopOfHeap);  // _heap[_topOfHeap + 1] = _topOfHeap;
+                        yield return Push(TopOfHeap);                       // Push(_topOfHeap);
+                        yield return Add(TopOfHeap, 16);                    // _topOfHeap += 2;
+                        yield break;
+
+                    case I.LoadField(var fieldNum):
+                    {
+                        yield return Pop(Scratch1);                            // var addr = Deref(Pop());
+                        yield return Call("Deref");                            //
+                        yield return Add(Scratch1, (3 + (fieldNum * 2)) * 8);  // Push(addr + 3 + (fieldNum * 2));
+                        yield return Push(Scratch1);                           //
+                        yield break;
+                    }
+
+                    case I.CreateObject(var atomId, var length):
+                    {
+                        yield return Mov($"[{TopOfHeap}]", 1);                        // _heap[_topOfHeap] = 1;
+                        yield return Mov($"[{TopOfHeap} + 8]", atomId);               // _heap[_topOfHeap + 1] = atomId;
+                        yield return Mov($"[{TopOfHeap} + 16]", length);              // _heap[_topOfHeap + 2] = length;
+                        yield return Push(TopOfHeap);                                 // Push(_topOfHeap);
+                        yield return Add(TopOfHeap, 24 + length * 16);                // _topOfHeap += 3;  _topOfHeap += length * 2;
+
+                        for (var i = 0; i < length; i++)
+                        {
+                            var offset = (i + 1) * 16;
+                            yield return Lea(Scratch1, $"[{TopOfHeap} - {offset}]");  // var x = _topOfHeap - (i + 1) * 2;
+                            yield return Mov($"[{Scratch1}]", 0);                     // _heap[x] = 0;
+                            yield return Mov($"[{Scratch1} + 8]", Scratch1);          // _heap[x + 1] = x;
+                        }
+                        yield break;
+                    }
+
+                    case I.GetObject(var atomId, var length):
+                    {
+                        var @else = UniqueName("else");
+                        var end = UniqueName("end");
+
+                        yield return Pop(Scratch1);            // var addr = Deref(Pop());
+                        yield return Call("Deref");
+                        
+                        yield return Cmp($"[{Scratch1}]", 0);  // if (_heap[addr] == 0)
+                        yield return Jne(@else);               // {
+                        
+                        yield return Mov($"[{TopOfHeap}]", 1);                        // _heap[_topOfHeap] = 1;
+                        yield return Mov($"[{TopOfHeap} + 8]", atomId);               // _heap[_topOfHeap + 1] = atomId;
+                        yield return Mov($"[{TopOfHeap} + 16]", length);              // _heap[_topOfHeap + 2] = length;
+                        yield return Push(TopOfHeap);                                 // Push(_topOfHeap);
+                        yield return Add(TopOfHeap, 24 + length * 16);                // _topOfHeap += 3;  _topOfHeap += length * 2;
+
+                        for (var i = 0; i < length; i++)
+                        {
+                            var offset = (i + 1) * 16;
+                            yield return Lea(Scratch1, $"[{TopOfHeap} - {offset}]");  // var x = _topOfHeap - (i + 1) * 2;
+                            yield return Mov($"[{Scratch1}]", 0);                     // _heap[x] = 0;
+                            yield return Mov($"[{Scratch1} + 8]", Scratch1);          // _heap[x + 1] = x;
+                        }
+
+                        yield return Jmp(end);      // }
+
+                        yield return Label(@else);                       // else {
+                        yield return Cmp($"[{Scratch1} + 8]", atomId);   //     if (_heap[addr + 1] != atomId
+                        yield return Jne("Backtrack");                   //
+                        yield return Cmp($"[{Scratch1} + 16]", length);  //         || _heap[addr + 2] != length)
+                        yield return Jne("Backtrack");                   //     { Backtrack(); }
+                        
+                        yield return Push(Scratch1);                     //     Push(addr);
+                        yield return Label(end);                         // }
+                        yield break;
+                    }
+
+                    case I.Bind:
+                    {
+                        yield return Pop(Scratch1);  // var target = Pop();
+                        yield return Pop(Scratch2);  // var source = Pop();
+                        yield return Call("Bind");   // Bind(source, target);
+                        yield break;
+                    }
+
+                    case I.Unify:
+                    {
+                        yield return Pop(Scratch1);     // var left = Pop();
+                        yield return Pop(Scratch2);     // var right = Pop();
+                        yield return Call("Unify");     // var result = Unify();
+                        yield return Cmp(Scratch1, 0);  // if (!result)
+                        yield return Je("Backtrack");   // { Backtrack(); return; }
+                        yield break;
+                    }
 
                     case I.Write(var msg):
                     {
@@ -164,6 +280,7 @@ section .data
     __openParen: db ""("", 0
     __closeParen: db "")"", 0
     __comma: db "", "", 0
+    __X: db ""X"", 0
     __symbolTable: dq {string.Join(", ", textSymbols.Select(x => $"__symbol_{x}"))}
 
 
@@ -174,33 +291,152 @@ section .text
     extern _exit
     global _main
 
+
     _main:
         push rbp
         mov rbp, rsp
 
-        mov rdi, 16000     ; 16k of trail space please
+        mov rdi, 16000            ; 16k of trail space please
         call _malloc
-        mov rsi, rax       ; bottom of trail
+        push rax
 
-        mov rdi, 640000    ; 640k of heap space please
-        call _malloc       ; top of heap in rax 
+        sub rsp, 8
+        mov rdi, 640000           ; 640k of heap space please
+        call _malloc              ; top of heap in rax 
+        add rsp, 8
 
-        mov rcx, 0         ; trail length
-        lea rdx, [rsp + 8] ; last choice
+        pop {BottomOfTrail}       ; bottom of trail
+        mov {TrailLength}, 0      ; trail length
+        mov {LastChoice}, 0       ; last choice
 
         jmp Prolog
 
+
+    Deref:
+        cmp qword [{Scratch1}], 0
+        jne .end
+        cmp qword [{Scratch1} + 8], {Scratch1}
+        je .end
+        mov {Scratch1}, [{Scratch1} + 8]
+        jmp Deref
+    .end:
+        ret
+
+
+    Bind:  ; bind variable {Scratch1} to {Scratch2} (or vice versa)
+        cmp {Scratch1}, {Scratch2}
+        jge .if
+        xchg {Scratch1}, {Scratch2}
+    .if:
+        cmp qword [{Scratch1}], 0
+        jne .elif
+        cmp qword [{Scratch1} + 8], {Scratch1}
+        jne .elif
+        ; no need to exchange
+        jmp .end
+    .elif:
+        cmp qword [{Scratch2}], 0
+        jne Exit
+        cmp qword [{Scratch2} + 8], {Scratch2}
+        jne Exit
+        xchg {Scratch1}, {Scratch2}
+        jmp .end
+    .end:
+        cmp {LastChoice}, 0
+        je ._bind
+        cmp {Scratch1}, [{LastChoice} + 8]
+        jge ._bind
+        ; record in trail
+        mov [{BottomOfTrail} + {TrailLength} * 8], {Scratch1}
+        add {TrailLength}, 8
+    ._bind:
+        mov [{Scratch1} + 8], {Scratch2}
+        ret
+
+
+    Unify:  ; unify terms in {Scratch1} and {Scratch2}. return 1 or 0 in {Scratch1}
+        push rbp
+        mov rbp, rsp
+
+        push {Scratch1}
+        push {Scratch2}
+
+    .while:
+        cmp {TopOfStack}, {FrameBase}
+        jge .endwhile
+
+        pop {Scratch1}
+        call Deref
+        mov {Scratch2}, {Scratch1}
+
+        pop {Scratch1}
+        call Deref
+
+        cmp {Scratch1}, {Scratch2}
+        je .while
+
+        cmp qword [{Scratch1}], 0
+        je .bind
+        cmp qword [{Scratch2}], 0
+        je .bind
+
+        mov {Scratch3}, [{Scratch1} + 8]
+        cmp qword {Scratch3}, [{Scratch2} + 8]
+        jne .fail
+        mov {Scratch3}, [{Scratch1} + 16]
+        cmp qword {Scratch3}, [{Scratch2} + 16]
+        jne .fail
+
+        add {Scratch1}, 24
+        add {Scratch2}, 24
+    .for:
+        cmp {Scratch3}, 0
+        jle .while
+        push {Scratch1}
+        add {Scratch1}, 16
+        push {Scratch2}
+        add {Scratch2}, 16
+        dec {Scratch3}
+        jmp .for
+
+    .bind:
+        call Bind
+        jmp .while
+    
+    .endwhile:
+        mov {Scratch1}, 1
+        mov rsp, rbp
+        pop rbp
+        ret
+    
+    .fail:
+        mov {Scratch1}, 0
+        mov rsp, rbp
+        pop rbp
+        ret
+
+
+    Backtrack:
+        cmp {LastChoice}, 0
+        je Exit
+        jmp [{LastChoice}]
+        
+    
     Write:  ; write the null-terminated string in rdi
         push rbp
         mov rbp, rsp
 
         ; save registers
-        push rax
-        push rsi
-        push rcx
-        push rdx
-        push rbx
+        push {TopOfHeap}
+        push {TrailLength}
+        push {BottomOfTrail}
+        push {TopOfStack}
+        push {FrameBase}
+        push {LastChoice}
+        push {Scratch1}
+        push {Scratch2}
 
+        push rbx
         ; align stack
         mov rbx, rsp
         and rsp, -16
@@ -209,17 +445,27 @@ section .text
 
         ; unalign stack
         mov rsp, rbx
+        pop rbx
 
         ; restore registers
-        pop rbx
-        pop rdx
-        pop rcx
-        pop rsi
-        pop rax
+        pop {Scratch2}
+        pop {Scratch1}
+        pop {LastChoice}
+        pop {FrameBase}
+        pop {TopOfStack}
+        pop {BottomOfTrail}
+        pop {TrailLength}
+        pop {TopOfHeap}
         
         mov rsp, rbp
         pop rbp
         ret
+
+
+    Exit:
+        and rsp, -16  ; align stack
+        mov rdi, 0
+        call _exit
 
     Prolog:
 {string.Join("\n", program.Code.SelectMany(Handle))}
@@ -244,11 +490,15 @@ section .text
         private static string And(params object[] args)
             => Instruction("and", args);
         private static string Mov(params object[] args)
-            => Instruction("mov", args);
+            => Instruction("mov qword", args);
         private static string Lea(params object[] args)
             => Instruction("lea", args);
         private static string Cmp(params object[] args)
-            => Instruction("cmp", args);
+            => Instruction("cmp qword", args);
+        private static string Je(string label)
+            => Instruction("je", label);
+        private static string Jne(string label)
+            => Instruction("jne", label);
         private static string Jle(string label)
             => Instruction("jle", label);
         private static string Jmp(string label)
@@ -258,9 +508,9 @@ section .text
         private static string Ret()
             => Instruction("ret");
         private static string Push(string arg)
-            => Instruction("push", arg);
+            => Instruction("push qword", arg);
         private static string Pop(string arg)
-            => Instruction("pop", arg);
+            => Instruction("pop qword", arg);
         private static string Instruction(string name, params object[] args) 
             => "        " + name + " " + string.Join(", ", args);
 
