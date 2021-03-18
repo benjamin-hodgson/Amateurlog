@@ -12,7 +12,7 @@ var source = @"
     first(cons(X, Y), X).
 
     main() :-
-        set(cons(foo, cons(baz, nil)), List),
+        set(cons(foo, cons(baz(quux), nil)), List),
         last(List, X),
         first(List, Y),
         dump(X),
