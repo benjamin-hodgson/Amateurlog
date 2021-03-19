@@ -19,7 +19,7 @@ namespace Amateurlog.Machine
         private int _lastChoice = -1;
 
         private readonly int[] _trail = new int[160000];
-        private int _trailLength = 0;
+        private int _topOfTrail = -1;
 
         private readonly Program _program;
         private int _instructionPointer;
@@ -77,7 +77,7 @@ namespace Amateurlog.Machine
 
                 case I.Try(var catchInstr):
                     Push(_lastChoice);
-                    Push(_trailLength);
+                    Push(_topOfTrail);
                     Push(_frameBase);
                     Push(_topOfHeap);
                     Push(catchInstr);
@@ -89,11 +89,11 @@ namespace Amateurlog.Machine
                     _topOfHeap = _stack[_lastChoice - 1];
                     _frameBase = _stack[_lastChoice - 2];
                     // undo the trail
-                    while (_trailLength > _stack[_lastChoice - 3])
+                    while (_topOfTrail > _stack[_lastChoice - 3])
                     {
-                        _trailLength--;
-                        var addr = _trail[_trailLength];
+                        var addr = _trail[_topOfTrail];
                         _heap[addr + 1] = addr;
+                        _topOfTrail--;
                     }
                     _topOfStack = _lastChoice;
                     _stack[_lastChoice] = catchInstr;
@@ -104,11 +104,11 @@ namespace Amateurlog.Machine
                     _topOfHeap = _stack[_lastChoice - 1];
                     _frameBase = _stack[_lastChoice - 2];
                     // undo the trail
-                    while (_trailLength > _stack[_lastChoice - 3])
+                    while (_topOfTrail > _stack[_lastChoice - 3])
                     {
-                        _trailLength--;
-                        var addr = _trail[_trailLength];
+                        var addr = _trail[_topOfTrail];
                         _heap[addr + 1] = addr;
+                        _topOfTrail--;
                     }
                     _topOfStack = _lastChoice - 5;
                     _lastChoice = _stack[_lastChoice - 4];
@@ -333,8 +333,8 @@ namespace Amateurlog.Machine
 
             if (_lastChoice >= 0 && addr1 < _stack[_lastChoice - 1])
             {
-                _trail[_trailLength] = addr1;
-                _trailLength++;
+                _topOfTrail++;
+                _trail[_topOfTrail] = addr1;
             }
             _heap[addr1 + 1] = addr2;
         }

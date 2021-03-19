@@ -8,7 +8,7 @@ namespace Amateurlog.Machine
     static class Backend
     {
         private const string TopOfHeap = "rax";
-        private const string TrailLength = "rcx";
+        private const string TopOfTrail = "rcx";
         private const string TopOfStack = "rsp";
         private const string FrameBase = "rbp";
         private const string LastChoice = "rdx";
@@ -67,7 +67,7 @@ namespace Amateurlog.Machine
 
                     case I.Try(var id):
                         yield return Push(LastChoice);              // Push(_lastChoice);
-                        yield return Push(TrailLength);             // Push(_trailLength);
+                        yield return Push(TopOfTrail);              // Push(_topOfTrail);
                         yield return Push(FrameBase);               // Push(_frameBase);
                         yield return Push(TopOfHeap);               // Push(_topOfHeap);
                         yield return Mov(Scratch1, LabelName(id));  // Push(catchInstr);
@@ -84,17 +84,17 @@ namespace Amateurlog.Machine
                         yield return Mov(FrameBase, StackLocation(LastChoice, -2));            // _frameBase = _stack[_lastChoice - 2];
                                                                                                // // undo the trail
                         yield return Label(@while);                                            // while
-                        yield return Cmp(TrailLength, StackLocation(LastChoice, -3));          //       (_trailLength > _stack[_lastChoice - 3])
+                        yield return Cmp(TopOfTrail, StackLocation(LastChoice, -3));           //       (_topOfTrail > _stack[_lastChoice - 3])
                         yield return Jle(end);                                                 // {
-                        yield return Dec(TrailLength);                                         //     _trailLength--;
-                        yield return Mov(Scratch1, "[__bottomOfTrail]");                       //     var addr = _trail[_trailLength];
-                        yield return Mov(Scratch1, $"[{Scratch1} + {TrailLength} * 8]");       //     
+                        yield return Mov(Scratch1, $"[{TopOfTrail}]");                         //     var addr = _trail[_topOfTrail];
                         yield return Mov($"[{Scratch1} + 8]", Scratch1);                       //     _heap[addr + 1] = addr;
+                        yield return Sub(TopOfTrail, 8);                                       //     _topOfTrail--;
                         yield return Jmp(@while);                                              // }
                         yield return Label(end);                                               //
                                                                                                // 
                         yield return Mov(TopOfStack, LastChoice);                              // _topOfStack = _lastChoice;
-                        yield return Mov($"[{LastChoice}]", id);                               // _stack[_lastChoice] = catchInstr;
+                        yield return Mov(Scratch1, LabelName(id));                             // 
+                        yield return Mov($"[{LastChoice}]", Scratch1);                         // _stack[_lastChoice] = catchInstr;
                         yield break;
                     }
 
@@ -107,12 +107,11 @@ namespace Amateurlog.Machine
                         yield return Mov(FrameBase, StackLocation(LastChoice, -2));            // _frameBase = _stack[_lastChoice - 2];
                                                                                                // // undo the trail
                         yield return Label(@while);                                            // while
-                        yield return Cmp(TrailLength, StackLocation(LastChoice, -3));          //       (_trailLength > _stack[_lastChoice - 3])
+                        yield return Cmp(TopOfTrail, StackLocation(LastChoice, -3));           //       (_topOfTrail > _stack[_lastChoice - 3])
                         yield return Jle(end);                                                 // {
-                        yield return Dec(TrailLength);                                         //     _trailLength--;
-                        yield return Mov(Scratch1, "[__bottomOfTrail]");                       //     var addr = _trail[_trailLength];
-                        yield return Mov(Scratch1, $"[{Scratch1} + {TrailLength} * 8]");       //     
+                        yield return Mov(Scratch1, $"[{TopOfTrail}]");                         //     var addr = _trail[_topOfTrail];
                         yield return Mov($"[{Scratch1} + 8]", Scratch1);                       //     _heap[addr + 1] = addr;
+                        yield return Sub(TopOfTrail, 8);                                       //     _topOfTrail--;
                         yield return Jmp(@while);                                              // }
                         yield return Label(end);                                               //
                                                                                                // 
@@ -309,12 +308,14 @@ section .text
 
         mov rdi, 16000            ; 16k of trail space please
         call _malloc
-        mov [__bottomOfTrail], rax
+        push rax
 
+        sub rsp, 8                ; align stack
         mov rdi, 640000           ; 640k of heap space please
         call _malloc              ; top of heap in rax 
+        add rsp, 8                ; unalign stack
 
-        mov {TrailLength}, 0      ; trail length
+        pop {TopOfTrail}
         mov {LastChoice}, 0       ; last choice
 
         jmp Prolog
@@ -355,9 +356,8 @@ section .text
         cmp {Scratch1}, [{LastChoice} + 8]
         jge ._bind
         ; record in trail
-        mov {Scratch3}, [__bottomOfTrail]
-        mov [{Scratch3} + {TrailLength} * 8], {Scratch1}
-        add {TrailLength}, 8
+        add {TopOfTrail}, 8
+        mov [{TopOfTrail}], {Scratch1}
     ._bind:
         mov [{Scratch1} + 8], {Scratch2}
         ret
@@ -517,7 +517,7 @@ section .text
 
         ; save registers
         push {TopOfHeap}
-        push {TrailLength}
+        push {TopOfTrail}
         push {TopOfStack}
         push {FrameBase}
         push {LastChoice}
@@ -543,7 +543,7 @@ section .text
         pop {LastChoice}
         pop {FrameBase}
         pop {TopOfStack}
-        pop {TrailLength}
+        pop {TopOfTrail}
         pop {TopOfHeap}
         
         mov rsp, rbp
