@@ -11,18 +11,22 @@ namespace Amateurlog.Machine
         private int _topOfHeap = 0;
 
         private readonly int[] _stack = new int[160000];
-        // points at the return address
         private int _frameBase = -1;
-        // points at the data on top of the stack
         private int _topOfStack = -1;
-        // points at the catch instruction
         private int _lastChoice = -1;
+
+        private readonly int[] _slots = new int[160000];
 
         private readonly int[] _trail = new int[160000];
         private int _topOfTrail = -1;
 
         private readonly Program _program;
-        private int _instructionPointer;
+        private int _currentProcedure = -1;
+        private Procedure CurrentProcedure => _program.Code[_currentProcedure];
+        private int _currentClause = -1;
+        private Clause CurrentClause => CurrentProcedure.Clauses[_currentClause];
+        private int _currentInstruction = -1;
+        private Instruction CurrentInstruction => CurrentClause.Code[_currentInstruction];
 
         public Machine(Program program)
         {
@@ -31,147 +35,164 @@ namespace Amateurlog.Machine
 
         public void Run()
         {
-            while (_instructionPointer >= 0 && _instructionPointer < _program.Code.Length)
+            _currentProcedure = _program.Main;
+            _currentClause = 0;
+            while (_currentProcedure >= 0)
             {
-                Exec(_program.Code[_instructionPointer]);
+                if (_currentInstruction < 0)
+                {
+                    Enter();
+                }
+                else if (_currentInstruction >= CurrentClause.Code.Length)
+                {
+                    Leave();
+                }
+                else
+                {
+                    Exec();
+                }
             }
         }
 
-        private void Exec(Instruction instruction)
+        private void Enter()
         {
-            switch (instruction)
+            void Undo()
             {
-                case I.End:
-                    _instructionPointer = -1;
-                    return;
-
-                case I.Allocate(var slotCount):
-                    _topOfStack += slotCount;
-                    _instructionPointer++;
-                    return;
-
-                case I.Return:
+                // undo any destructive changes
+                _topOfHeap = _stack[_lastChoice + 3];
+                while (_topOfTrail > _stack[_lastChoice + 4])
                 {
-                    if (_frameBase < _lastChoice - 4)
-                    {
-                        // there's been a choice since this frame was pushed
-                        _topOfStack = _lastChoice;
-                    }
-                    else
-                    {
-                        _topOfStack = _stack[_frameBase - 2];
-                    }
-                    var tmp = _frameBase;
-                    _frameBase = _stack[tmp - 1];
-                    _instructionPointer = _stack[tmp];
-                    return;
+                    var addr = _trail[_topOfTrail];
+                    _heap[addr + 1] = addr;
+                    _topOfTrail--;
                 }
-                
-                case I.Call(var instr, var argCount):
-                    Push(_topOfStack - argCount);
-                    Push(_frameBase);
-                    _frameBase = _topOfStack + 1;
-                    Push(_instructionPointer + 1);
-                    _instructionPointer = instr;
-                    return;
-
-                case I.Try(var catchInstr):
+            }
+            void RestoreArgs()
+            {
+                _frameBase = _stack[_lastChoice + 5];
+                for (var i = 0; i < CurrentProcedure.Signature.ParamCount; i++)
+                {
+                    _slots[i] = _stack[_lastChoice + 6 + i];
+                }
+            }
+            switch (CurrentClause.ClauseType)
+            {
+                case ClauseType.NoChoice:
+                    break;
+                case ClauseType.FirstClause:
+                    // allocate a choice:
+                    //     [0] Pointer to previous choice
+                    //     [1-2] Resumption point (location of code for next clause)
+                    //     [3] Previous base pointer
+                    //     [4] Current state of heap and trail (for undoing)
+                    //     [5] Args (for resuming)
                     Push(_lastChoice);
+                    _lastChoice = _topOfStack;
+                    Push(_currentProcedure);
+                    Push(_currentClause + 1);
+                    Push(_topOfHeap);
                     Push(_topOfTrail);
                     Push(_frameBase);
-                    Push(_topOfHeap);
-                    Push(catchInstr);
-                    _lastChoice = _topOfStack;
-                    _instructionPointer++;
-                    return;
-
-                case I.Catch(var catchInstr):
-                    _topOfHeap = _stack[_lastChoice - 1];
-                    _frameBase = _stack[_lastChoice - 2];
-                    // undo the trail
-                    while (_topOfTrail > _stack[_lastChoice - 3])
+                    for (var i = 0; i < CurrentProcedure.Signature.ParamCount; i++)
                     {
-                        var addr = _trail[_topOfTrail];
-                        _heap[addr + 1] = addr;
-                        _topOfTrail--;
+                        Push(_slots[i]);
                     }
-                    _topOfStack = _lastChoice;
-                    _stack[_lastChoice] = catchInstr;
-                    _instructionPointer++;
-                    return;
-
-                case I.CatchAll:
-                    _topOfHeap = _stack[_lastChoice - 1];
-                    _frameBase = _stack[_lastChoice - 2];
-                    // undo the trail
-                    while (_topOfTrail > _stack[_lastChoice - 3])
-                    {
-                        var addr = _trail[_topOfTrail];
-                        _heap[addr + 1] = addr;
-                        _topOfTrail--;
-                    }
-                    _topOfStack = _lastChoice - 5;
-                    _lastChoice = _stack[_lastChoice - 4];
-                    _instructionPointer++;
-                    return;
-
-                case I.StoreLocal(var slot, bool hasChoice):
+                    break;
+                case ClauseType.NextClause:
                 {
-                    // if there was a choice point at the start of this function,
-                    // the locals are on top of the choice point
-                    var offset = (hasChoice ? 6 : 1) + slot;
-                    _stack[_frameBase + offset] = Pop();
-                    _instructionPointer++;
+                    Undo();
+                    // increment the choice
+                    _stack[_lastChoice + 2]++;
+                    _topOfStack = _lastChoice + 6 + CurrentProcedure.Signature.ParamCount;
+                    break;
+                }
+                case ClauseType.LastClause:
+                {
+                    Undo();
+                    RestoreArgs();
+                    // deallocate the choice
+                    var tmp = _lastChoice;
+                    _lastChoice = _stack[tmp];
+                    _topOfStack = tmp - 1;
+                    break;
+                }
+            }
+            Push(_frameBase);
+            _frameBase = _topOfStack;
+            _topOfStack += CurrentClause.SlotCount;
+
+            _currentInstruction = 0;
+        }
+        private void Leave()
+        {
+            var hasChoice = CurrentClause.ClauseType is ClauseType.FirstClause or ClauseType.NextClause;
+            
+            if (hasChoice || _lastChoice > _frameBase)
+            {
+                // Don't deallocate the choice or the return address
+                var returnAddressStart = hasChoice
+                    ? _frameBase - (CurrentProcedure.Signature.ParamCount + 9)
+                    : _frameBase - 3;
+                _currentInstruction = _stack[returnAddressStart + 2];
+                _currentClause = _stack[returnAddressStart + 1];
+                _currentProcedure = _stack[returnAddressStart];
+
+                if (_lastChoice > _frameBase)
+                {
+                    _frameBase = _stack[_frameBase];
+                }
+                else
+                {
+                    _topOfStack = _frameBase;
+                    _frameBase = Pop();
+                }
+            }
+            else
+            {
+                _topOfStack = _frameBase;
+                _frameBase = Pop();
+
+                _currentInstruction = Pop();
+                _currentClause = Pop();
+                _currentProcedure = Pop();
+            }
+        }
+
+        private void Exec()
+        {
+            switch (CurrentInstruction)
+            {
+                case I.Call(var procedureId, var argSlots):
+                {
+                    for (var i = 0; i < argSlots.Length; i++)
+                    {
+                        _slots[i] = SlotRef(argSlots[i]);
+                    }
+                    Push(_currentProcedure);
+                    Push(_currentClause);
+                    Push(_currentInstruction + 1);
+                    _currentProcedure = procedureId;
+                    _currentClause = 0;
+                    _currentInstruction = -1;
                     return;
                 }
 
-                case I.LoadLocal(var slot, bool hasChoice):
+                case I.CreateVariable(var outputSlot):
                 {
-                    // if there was a choice point at the start of this function,
-                    // the locals are on top of the choice point
-                    var offset = (hasChoice ? 6 : 1) + slot;
-                    Push(_stack[_frameBase + offset]);
-                    _instructionPointer++;
-                    return;
-                }
-
-                case I.LoadArg(var argNumber):
-                    Push(_stack[_frameBase - 3 - argNumber]);
-                    _instructionPointer++;
-                    return;
-
-                case I.Dup:
-                    Push(_stack[_topOfStack]);
-                    _instructionPointer++;
-                    return;
-                
-                case I.Pop:
-                    Pop();
-                    _instructionPointer++;
-                    return;
-
-                case I.CreateVariable:
                     _heap[_topOfHeap] = 0;
                     _heap[_topOfHeap + 1] = _topOfHeap;
-                    Push(_topOfHeap);
+                    SlotRef(outputSlot) = _topOfHeap;
                     _topOfHeap += 2;
-                    _instructionPointer++;
-                    return;
-
-                case I.LoadField(var fieldNum):
-                {
-                    var addr = Deref(Pop());
-                    Push(addr + 3 + (fieldNum * 2));
-                    _instructionPointer++;
+                    _currentInstruction++;
                     return;
                 }
 
-                case I.CreateObject(var atomId, var length):
+                case I.CreateObject(var atomId, var length, var outputSlot):
                 {
                     _heap[_topOfHeap] = 1;
                     _heap[_topOfHeap + 1] = atomId;
                     _heap[_topOfHeap + 2] = length;
-                    Push(_topOfHeap);
+                    SlotRef(outputSlot) = _topOfHeap;
                     _topOfHeap += 3;
 
                     _topOfHeap += length * 2;
@@ -182,19 +203,19 @@ namespace Amateurlog.Machine
                         _heap[x + 1] = x;
                     }
 
-                    _instructionPointer++;
+                    _currentInstruction++;
                     return;
                 }
 
-                case I.GetObject(var atomId, var length):
+                case I.MatchObject(var atomId, var length, var slot):
                 {
-                    var addr = Deref(Pop());
+                    var addr = Deref(SlotRef(slot));
                     if (_heap[addr] == 0)
                     {
                         _heap[_topOfHeap] = 1;
                         _heap[_topOfHeap + 1] = atomId;
                         _heap[_topOfHeap + 2] = length;
-                        Push(_topOfHeap);
+                        SlotRef(slot) = _topOfHeap;
                         _topOfHeap += 3;
 
                         _topOfHeap += length * 2;
@@ -212,48 +233,56 @@ namespace Amateurlog.Machine
                             Backtrack();
                             return;
                         }
-                        Push(addr);
+                        SlotRef(slot) = addr;
                     }
 
-                    _instructionPointer++;
+                    _currentInstruction++;
                     return;
                 }
 
-                case I.Bind:
+                case I.GetFieldAddress(var fieldNum, var inputSlot, var outputSlot):
                 {
-                    var target = Pop();
-                    var source = Pop();
-                    Bind(source, target);
-                    _instructionPointer++;
+                    var addr = Deref(SlotRef(inputSlot));
+                    SlotRef(outputSlot) = addr + 3 + (fieldNum * 2);
+                    _currentInstruction++;
                     return;
                 }
 
-                case I.Unify:
+                case I.SetField(var fieldNum, var inputContainerSlot, var inputItemSlot):
                 {
-                    var right = Pop();
-                    var left = Pop();
-                    
-                    var result = Unify(left, right);
+                    var addr = Deref(SlotRef(inputContainerSlot));
+                    var fieldAddr = addr + 3 + (fieldNum * 2);
+                    // assume the field is currently an unbound variable
+                    _heap[fieldAddr + 1] = SlotRef(inputItemSlot);
+                    _currentInstruction++;
+                    return;
+                }
 
-                    if (!result)
-                    {
-                        Backtrack();
-                        return;
-                    }
-
-                    _instructionPointer++;
+                case I.Unify(var slot1, var slot2):
+                {
+                    Unify(SlotRef(slot1), SlotRef(slot2));
+                    _currentInstruction++;
                     return;
                 }
 
                 case I.Write(var msg):
+                {
                     Console.Write(_program.Symbols[msg]);
-                    _instructionPointer++;
+                    _currentInstruction++;
                     return;
+                }
 
-                case I.Dump:
-                    Dump(Pop());
-                    _instructionPointer++;
+                case I.Dump(var slot):
+                {
+                    Dump(SlotRef(slot));
+                    _currentInstruction++;
                     return;
+                }
+                case I.Exit:
+                {
+                    _currentProcedure = -1;
+                    return;
+                }
 
                 default:
                     throw new Exception();
@@ -343,11 +372,13 @@ namespace Amateurlog.Machine
         {
             if (_lastChoice >= 0)
             {
-                _instructionPointer = _stack[_lastChoice];
+                _currentProcedure = _stack[_lastChoice + 1];
+                _currentClause = _stack[_lastChoice + 2];
+                _currentInstruction = -1;
             }
             else
             {
-                _instructionPointer = -1;
+                _currentProcedure = _currentClause = _currentInstruction = -1;
             }
         }
 
@@ -361,6 +392,19 @@ namespace Amateurlog.Machine
             var result = _stack[_topOfStack];
             _topOfStack--;
             return result;
+        }
+
+        private ref int SlotRef(Slot slot)
+        {
+            switch (slot.SlotType)
+            {
+                case SlotType.Temporary:
+                    return ref _slots[slot.Id];
+                case SlotType.Permanent:
+                    return ref _stack[_frameBase + 1 + slot.Id];
+                default:
+                    throw new Exception("unreachable");
+            }
         }
 
         public void Dump(int address)

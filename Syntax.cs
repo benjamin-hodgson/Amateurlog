@@ -7,9 +7,9 @@ namespace Amateurlog
 {
     class Rule
     {
-        public Predicate Head { get; }
-        public ImmutableArray<Predicate> Body { get; }
-        public Rule(Predicate head, ImmutableArray<Predicate> body)
+        public Functor Head { get; }
+        public ImmutableArray<Functor> Body { get; }
+        public Rule(Functor head, ImmutableArray<Functor> body)
         {
             Head = head;
             Body = body;
@@ -23,7 +23,7 @@ namespace Amateurlog
             ) + ".";
     }
 
-    abstract partial class Term : IRewritable<Term>
+    abstract partial record Term : IRewritable<Term>
     {
         public abstract int CountChildren();
         public abstract void GetChildren(Span<Term> childrenReceiver);
@@ -35,54 +35,25 @@ namespace Amateurlog
                 {
                     switch (x)
                     {
-                        case Atom a:
-                            return a.Value;
                         case Variable v:
                             return v.Name;
-                        case Predicate p:
-                            return p.Name + "(" + string.Join(", ", childResults.ToArray()) + ")";
+                        case Functor f:
+                            return f.Atom + "(" + string.Join(", ", childResults.ToArray()) + ")";
                         default:
                             throw new ArgumentOutOfRangeException();
                     }
                 }
             );
     }
-    partial class Atom : Term
+    partial record Variable(string Name) : Term
     {
-        public string Value { get; }
-        public Atom(string value)
-        {
-            Value = value;
-        }
-
         public override int CountChildren() => 0;
         public override void GetChildren(Span<Term> childrenReceiver) {}
         public override Term SetChildren(ReadOnlySpan<Term> newChildren)
             => this;
     }
-    partial class Variable : Term
+    partial record Functor(string Atom, ImmutableArray<Term> Args) : Term
     {
-        public string Name { get; }
-        public Variable(string name)
-        {
-            Name = name;
-        }
-
-        public override int CountChildren() => 0;
-        public override void GetChildren(Span<Term> childrenReceiver) {}
-        public override Term SetChildren(ReadOnlySpan<Term> newChildren)
-            => this;
-    }
-    partial class Predicate : Term
-    {
-        public string Name { get; }
-        public ImmutableArray<Term> Args { get; }
-        public Predicate(string name, ImmutableArray<Term> args)
-        {
-            Name = name;
-            Args = args;
-        }
-
         public override int CountChildren() => Args.Length;
         public override void GetChildren(Span<Term> childrenReceiver)
         {
@@ -92,6 +63,6 @@ namespace Amateurlog
             }
         }
         public override Term SetChildren(ReadOnlySpan<Term> newChildren)
-            => new Predicate(Name, newChildren.ToArray().ToImmutableArray());
+            => new Functor(Atom, newChildren.ToArray().ToImmutableArray());
     }
 }

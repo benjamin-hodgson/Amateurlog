@@ -61,8 +61,8 @@ namespace Amateurlog
             }
 
             return new Rule(
-                (Predicate)subst.Apply(rule.Head),
-                rule.Body.Select(subst.Apply).Cast<Predicate>().ToImmutableArray()
+                (Functor)subst.Apply(rule.Head),
+                rule.Body.Select(subst.Apply).Cast<Functor>().ToImmutableArray()
             );
         }
     }

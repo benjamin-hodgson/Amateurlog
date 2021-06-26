@@ -33,32 +33,29 @@ namespace Amateurlog
             );
 
         private static readonly Parser<char, Term> _term = Rec(() =>
-            OneOf(_variable, _predicate.Cast<Term>(), _atom)
+            OneOf(_variable, _functor!.Cast<Term>())
         ).Labelled("term");
-
-        private static readonly Parser<char, Term> _atom
-            = Name(Lowercase)
-                .Select(name => (Term)new Atom(name))
-                .Labelled("atom");
 
         private static readonly Parser<char, Term> _variable
             = Name(Uppercase.Or(Char('_')))
                 .Select(name => (Term)new Variable(name))
                 .Labelled("variable");
 
-        private static readonly Parser<char, Predicate> _predicate = (
-            from name in Try(Name(Lowercase).Before(_openParen))
-            from args in CommaSeparated(_term).Before(_closeParen)
-            select new Predicate(name, args)
-        ).Labelled("predicate");
+        private static readonly Parser<char, Functor> _functor = (
+            from name in Name(Lowercase)
+            from args in CommaSeparated(_term)
+                .Between(_openParen, _closeParen)
+                .Or(Return(ImmutableArray<Term>.Empty))
+            select new Functor(name, args)
+        ).Labelled("functor");
 
         private static readonly Parser<char, Rule> _rule
             = Map(
                 (head, body) => new Rule(head, body),
-                _predicate,
+                _functor,
                 _colonDash
-                    .Then(CommaSeparatedAtLeastOnce(_predicate))
-                    .Or(Return(ImmutableArray<Predicate>.Empty))
+                    .Then(CommaSeparatedAtLeastOnce(_functor))
+                    .Or(Return(ImmutableArray<Functor>.Empty))
             )
             .Before(_dot)
             .Labelled("rule");
@@ -68,9 +65,9 @@ namespace Amateurlog
             from rules in _rule.Many()
             select rules.ToImmutableArray();
 
-        private static readonly Parser<char, Predicate> _query = SkipWhitespaces.Then(_predicate);
+        private static readonly Parser<char, Functor> _query = SkipWhitespaces.Then(_functor);
 
         public static ImmutableArray<Rule> ParseProgram(string input) => _program.ParseOrThrow(input);
-        public static Term ParseQuery(string input) => _predicate.ParseOrThrow(input);
+        public static Term ParseQuery(string input) => _functor.ParseOrThrow(input);
     }
 }

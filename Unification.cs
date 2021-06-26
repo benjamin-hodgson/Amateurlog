@@ -14,7 +14,7 @@ namespace Amateurlog
     }
     interface IUnifiable<T> : IRewritable<T> where T : IUnifiable<T>
     {
-        string AsVariable();
+        string? AsVariable();
         bool Match(T right);
     }
 
@@ -26,7 +26,7 @@ namespace Amateurlog
                 .Select(x => x.AsVariable())
                 .Where(name => name != null)
                 .Distinct()
-                .ToImmutableHashSet();
+                .ToImmutableHashSet()!;
 
         public static T Apply<T>(this ImmutableDictionary<string, T> subst, T value) where T : IUnifiable<T>
             => value.Rewrite(
