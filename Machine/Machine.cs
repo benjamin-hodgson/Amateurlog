@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using I = Amateurlog.Machine.Instruction;
 
 namespace Amateurlog.Machine
@@ -15,6 +14,7 @@ namespace Amateurlog.Machine
         private int _topOfStack = -1;
         private int _lastChoice = -1;
 
+        private readonly int[] _args = new int[160000];
         private readonly int[] _slots = new int[160000];
 
         private readonly int[] _trail = new int[160000];
@@ -167,7 +167,7 @@ namespace Amateurlog.Machine
                 {
                     for (var i = 0; i < argSlots.Length; i++)
                     {
-                        _slots[i] = SlotRef(argSlots[i]);
+                        _args[i] = SlotRef(argSlots[i]);
                     }
                     Push(_currentProcedure);
                     Push(_currentClause);
@@ -181,7 +181,7 @@ namespace Amateurlog.Machine
                 case I.CreateVariable(var outputSlot):
                 {
                     _heap[_topOfHeap] = 0;
-                    _heap[_topOfHeap + 1] = _topOfHeap;
+                    _heap[_topOfHeap + 1] = -1;
                     SlotRef(outputSlot) = _topOfHeap;
                     _topOfHeap += 2;
                     _currentInstruction++;
@@ -201,7 +201,7 @@ namespace Amateurlog.Machine
                     {
                         var x = _topOfHeap - (i + 1) * 2;
                         _heap[x] = 0;
-                        _heap[x + 1] = x;
+                        _heap[x + 1] = -1;
                     }
 
                     _currentInstruction++;
@@ -224,7 +224,7 @@ namespace Amateurlog.Machine
                         {
                             var x = _topOfHeap - (i + 1) * 2;
                             _heap[x] = 0;
-                            _heap[x + 1] = x;
+                            _heap[x + 1] = -1;
                         }
                     }
                     else
@@ -337,7 +337,7 @@ namespace Amateurlog.Machine
 
         private int Deref(int address)
         {
-            while (_heap[address] == 0 && _heap[address + 1] != address)
+            while (_heap[address] == 0 && _heap[address + 1] != -1)
             {
                 address = _heap[address + 1];
             }
@@ -348,17 +348,17 @@ namespace Amateurlog.Machine
         {
             (addr1, addr2) = (Math.Max(addr1, addr2), Math.Min(addr1, addr2));
 
-            if (_heap[addr1] == 0 && _heap[addr1 + 1] == addr1)
+            if (_heap[addr1] == 0 && _heap[addr1 + 1] == -1)
             {
                 // (addr1, addr2) = (addr1, addr2);
             }
-            else if (_heap[addr2] == 0 && _heap[addr2 + 1] == addr2)
+            else if (_heap[addr2] == 0 && _heap[addr2 + 1] == -1)
             {
                 (addr1, addr2) = (addr2, addr1);
             }
             else
             {
-                throw new Exception();
+                throw new Exception("tried to bind a bound variable");
             }
 
             if (_lastChoice >= 0 && addr1 < _stack[_lastChoice - 1])
@@ -399,6 +399,8 @@ namespace Amateurlog.Machine
         {
             switch (slot.SlotType)
             {
+                case SlotType.Argument:
+                    return ref _args[slot.Id];
                 case SlotType.Temporary:
                     return ref _slots[slot.Id];
                 case SlotType.Permanent:

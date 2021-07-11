@@ -38,6 +38,7 @@ namespace Amateurlog.Machine
     record Slot(SlotType SlotType, int Id);
     enum SlotType
     {
+        Argument,
         Temporary,
         Permanent
     }

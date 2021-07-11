@@ -104,7 +104,7 @@ namespace Amateurlog.Machine
                 var code = ImmutableArray.CreateBuilder<Instruction>();
                 foreach (var (arg, argNum) in _rule.Head.Args.Select((x, i) => (x, i)))
                 {
-                    code.AddRange(MatchTerm(new Slot(SlotType.Temporary, argNum), arg));
+                    code.AddRange(MatchTerm(new Slot(SlotType.Argument, argNum), arg));
                 }
 
                 foreach (var goal in _rule.Body)
