@@ -101,6 +101,7 @@ namespace Amateurlog.Machine
                 case ClauseType.NextClause:
                 {
                     Undo();
+                    RestoreArgs();
                     // increment the choice
                     _stack[_lastChoice + 2]++;
                     _topOfStack = _lastChoice + 6 + CurrentProcedure.Signature.ParamCount;
