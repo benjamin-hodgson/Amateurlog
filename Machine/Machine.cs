@@ -63,7 +63,7 @@ namespace Amateurlog.Machine
                 while (_topOfTrail > _stack[_lastChoice + 4])
                 {
                     var addr = _trail[_topOfTrail];
-                    _heap[addr + 1] = addr;
+                    _heap[addr + 1] = -1;
                     _topOfTrail--;
                 }
             }
