@@ -163,12 +163,8 @@ namespace Amateurlog.Machine
         {
             switch (CurrentInstruction)
             {
-                case I.Call(var procedureId, var argSlots):
+                case I.Call(var procedureId):
                 {
-                    for (var i = 0; i < argSlots.Length; i++)
-                    {
-                        _args[i] = SlotRef(argSlots[i]);
-                    }
                     Push(_currentProcedure);
                     Push(_currentClause);
                     Push(_currentInstruction + 1);
@@ -262,6 +258,13 @@ namespace Amateurlog.Machine
                 case I.Unify(var slot1, var slot2):
                 {
                     Unify(SlotRef(slot1), SlotRef(slot2));
+                    _currentInstruction++;
+                    return;
+                }
+
+                case I.Mov(var slot1, var slot2):
+                {
+                    SlotRef(slot2) = SlotRef(slot1);
                     _currentInstruction++;
                     return;
                 }

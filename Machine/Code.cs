@@ -54,7 +54,9 @@ namespace Amateurlog.Machine
         public record SetField(int FieldNum, Slot InputContainerSlot, Slot InputItemSlot) : Instruction;
         public record Unify(Slot Slot1, Slot Slot2) : Instruction;
 
-        public record Call(int ProcedureId, ImmutableArray<Slot> ArgSlots) : Instruction;
+        public record Mov(Slot InputSlot, Slot OutputSlot) : Instruction;
+
+        public record Call(int ProcedureId) : Instruction;
 
         public record Dump(Slot Slot) : Instruction;
         public record Write(int AtomId) : Instruction;

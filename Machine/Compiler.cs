@@ -102,7 +102,7 @@ namespace Amateurlog.Machine
             public Clause Compile()
             {
                 var code = ImmutableArray.CreateBuilder<Instruction>();
-                foreach (var (arg, argNum) in _rule.Head.Args.Select((x, i) => (x, i)))
+                foreach (var (arg, argNum) in _rule.Head.Args.Enumerate())
                 {
                     code.AddRange(MatchTerm(new Slot(SlotType.Argument, argNum), arg));
                 }
@@ -124,7 +124,7 @@ namespace Amateurlog.Machine
                         {
                             new I.MatchObject(_symbols[atom], args.Length, slot)
                         };
-                        foreach (var (arg, i) in args.Select((x, i) => (x, i)))
+                        foreach (var (arg, i) in args.Enumerate())
                         {
                             var slot1 = GetFreshSlot(SlotType.Temporary);
                             instrs.Add(new I.GetFieldAddress(i, slot, slot1));
@@ -168,43 +168,44 @@ namespace Amateurlog.Machine
                     yield break;
                 }
 
-                var argSlots = ImmutableArray.CreateBuilder<Slot>();
-                foreach (var arg in goal.Args)
+                foreach (var (arg, argNum) in goal.Args.Enumerate())
                 {
-                    var (slot, instrs) = BuildTerm(arg);
-                    argSlots.Add(slot);
+                    var instrs = BuildTerm(arg, new Slot(SlotType.Argument, argNum));
                     foreach (var instr in instrs)
                     {
                         yield return instr;
                     }
                 }
 
-                yield return new I.Call(_procedures[new Signature(goal.Atom, goal.Args.Length)], argSlots.ToImmutable());
+                yield return new I.Call(_procedures[new Signature(goal.Atom, goal.Args.Length)]);
             }
 
-            private (Slot slot, IEnumerable<Instruction> code) BuildTerm(Term term)
+            private IEnumerable<Instruction> BuildTerm(Term term, Slot slot)
             {
                 switch (term)
                 {
                     case Functor(var atom, var args):
                     {
-                        var slot = GetFreshSlot(SlotType.Temporary);
                         var instrs = new List<Instruction>
                         {
                             new I.CreateObject(_symbols[atom], args.Length, slot)
                         };
-                        foreach (var (arg, i) in args.Select((x, i) => (x, i)))
+                        foreach (var (arg, i) in args.Enumerate())
                         {
-                            var (slot1, instrs1) = BuildTerm(arg);
+                            var slot1 = GetFreshSlot(SlotType.Temporary);
+                            var instrs1 = BuildTerm(arg, slot1);
                             instrs.AddRange(instrs1);
                             instrs.Add(new I.SetField(i, slot, slot1));
                         }
-                        return (slot, instrs);
+                        return instrs;
                     }
 
                     case Variable(var name):
                     {
-                        return GetOrCreateVariable(name);
+                        var (slot1, code) = GetOrCreateVariable(name);
+                        var instrs = code.ToList();
+                        instrs.Add(new I.Mov(slot1, slot));
+                        return instrs;
                     }
 
                     default:
