@@ -212,7 +212,7 @@ namespace Amateurlog.Machine
                         _heap[_topOfHeap] = 1;
                         _heap[_topOfHeap + 1] = atomId;
                         _heap[_topOfHeap + 2] = length;
-                        SlotRef(slot) = _topOfHeap;
+                        _heap[addr + 1] = _topOfHeap;
                         _topOfHeap += 3;
 
                         _topOfHeap += length * 2;
