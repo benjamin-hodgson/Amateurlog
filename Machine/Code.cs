@@ -8,24 +8,7 @@ namespace Amateurlog.Machine
         ImmutableArray<Procedure> Code,
         int Main
     );
-    record Signature(string Name, int ParamCount) : IComparable<Signature>
-    {
-        public int CompareTo(Signature? other)
-        {
-            if (other == null)
-            {
-                return 1;
-            }
-            switch (this.Name.CompareTo(other.Name))
-            {
-                case 0:
-                    return this.ParamCount.CompareTo(other.ParamCount);
-                case var x:
-                    return x;
-            }
-        }
-    }
-    record Procedure(Signature Signature, ImmutableArray<Clause> Clauses);
+    record Procedure(Sig Signature, ImmutableArray<Clause> Clauses);
     record Clause(ClauseType ClauseType, int SlotCount, ImmutableArray<Instruction> Code);
     enum ClauseType
     {

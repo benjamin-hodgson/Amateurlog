@@ -18,27 +18,27 @@ namespace Amateurlog.Machine
                 .Aggregate(Enumerable.Union)
                 .ToImmutableArray();
             var symbolsLookup = symbols
-                .Select((x, i) => new KeyValuePair<string, int>(x, i))
+                .Select((x, i) => KeyValuePair.Create(x, i))
                 .ToImmutableDictionary();
 
             var procedures = program
-                .GroupBy(r => new Signature(r.Head.Atom, r.Head.Args.Length))
+                .GroupBy(r => r.Head.Sig)
                 .OrderBy(x => x.Key)
                 .ToImmutableArray();
             var proceduresLookup = procedures
-                .Select((x, i) => new KeyValuePair<Signature, int>(x.Key, i))
+                .Select((x, i) => KeyValuePair.Create(x.Key, i))
                 .ToImmutableDictionary();
 
             var code = procedures
                 .Select(g => CompileProcedure(g, proceduresLookup, symbolsLookup))
                 .ToImmutableArray();
             
-            return new Program(symbols, code, proceduresLookup[new Signature("main", 0)]);
+            return new Program(symbols, code, proceduresLookup[new Sig("main", 0)]);
         }
 
         private static Procedure CompileProcedure(
-            IGrouping<Signature, Rule> g,
-            ImmutableDictionary<Signature, int> procedures,
+            IGrouping<Sig, Rule> g,
+            ImmutableDictionary<Sig, int> procedures,
             ImmutableDictionary<string, int> symbols
         ) => new Procedure(
                 g.Key,
@@ -74,14 +74,14 @@ namespace Amateurlog.Machine
             private int _permanentSlotCounter = 0;
             private Rule _rule;
             private ClauseType _choiceType;
-            private ImmutableDictionary<Signature, int> _procedures;
+            private ImmutableDictionary<Sig, int> _procedures;
             private ImmutableDictionary<string, int> _symbols;
 
             public ClauseCompiler(
                 Rule rule,
                 int clauseNumber,
                 int clauseCount,
-                ImmutableDictionary<Signature, int> procedures,
+                ImmutableDictionary<Sig, int> procedures,
                 ImmutableDictionary<string, int> symbols
             )
             {
@@ -177,7 +177,7 @@ namespace Amateurlog.Machine
                     }
                 }
 
-                yield return new I.Call(_procedures[new Signature(goal.Atom, goal.Args.Length)]);
+                yield return new I.Call(_procedures[goal.Sig]);
             }
 
             private IEnumerable<Instruction> BuildTerm(Term term, Slot slot)

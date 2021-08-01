@@ -1,7 +1,16 @@
-﻿using Amateurlog;
+﻿using System.Collections.Immutable;
+using Amateurlog;
 using Amateurlog.Machine;
 
 var source = @"
+    type list(X) :-
+        cons(X, list(X)),
+        nil.
+    
+    type data :-
+        foo,
+        bar.
+
     set(X, X).
 
     first(cons(X, Y), X).
@@ -14,10 +23,10 @@ var source = @"
         first(List, X),
         last(List, Y),
         dump(X),
-        dump(Y),
-        exit().
+        dump(Y).
 ";
 var ast = PrologParser.ParseProgram(source);
-var program = Compiler.Compile(ast);
+var result = new TypeChecker().Infer(ast);
+var program = Compiler.Compile(ast.Decls.OfType<Rule>().ToImmutableArray());
 var machine = new Machine(program);
 machine.Run();

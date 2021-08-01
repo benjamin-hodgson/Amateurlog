@@ -57,12 +57,12 @@ namespace Amateurlog
             {
                 throw new UnificationError("values didn't match");
             }
-            var leftChildren = left.GetChildren();
-            var rightChildren = right.GetChildren();
+            var leftChildren = left.GetChildren().ToImmutableArray();
+            var rightChildren = right.GetChildren().ToImmutableArray();
             return Solve(leftChildren, rightChildren);
         }
 
-        public static ImmutableDictionary<string, T> Solve<T>(T[] left, T[] right) where T : IUnifiable<T>
+        public static ImmutableDictionary<string, T> Solve<T>(ImmutableArray<T> left, ImmutableArray<T> right) where T : IUnifiable<T>
         {
             if (left.Length != right.Length)
             {
@@ -98,7 +98,7 @@ namespace Amateurlog
             ImmutableDictionary<string, T> right
         ) where T : IUnifiable<T>
             => left
-                .Select(kvp => new KeyValuePair<string, T>(kvp.Key, right.Apply(kvp.Value)))
+                .Select(kvp => KeyValuePair.Create(kvp.Key, right.Apply(kvp.Value)))
                 .Where(kvp => !(kvp.Value is Variable v && v.Name == kvp.Key))
                 .Concat(right)
                 .ToImmutableDictionary();
