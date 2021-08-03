@@ -23,7 +23,8 @@ var source = @"
         first(List, X),
         last(List, Y),
         dump(X),
-        dump(Y).
+        dump(Y),
+        exit().
 ";
 var ast = PrologParser.ParseProgram(source);
 var result = new TypeChecker().Infer(ast);

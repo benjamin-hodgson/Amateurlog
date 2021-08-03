@@ -2,34 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using Sawmill;
 using Unit = System.ValueTuple;
 
 namespace Amateurlog
 {
     class TypeChecker
     {
-        private static readonly ImmutableArray<Sig> _builtins = ImmutableArray.Create(new Sig("dump", 1));
+        private static readonly ImmutableArray<Sig> _builtins = ImmutableArray.Create(new Sig("dump", 1), new Sig("exit", 0));
         private int _freshnessCounter = 0;
 
         public Result Infer(Program program)
         {
-            // no need to do bidirectional type inference for value constructors
-            var constructors = (
-                from typeDecl in program.Decls.OfType<TypeDecl>()
-                let returnType = new TypeApplication(
-                    typeDecl.Name,
-                    typeDecl
-                        .Params
-                        .Select(n => new TypeVariable(n))
-                        .Cast<Type>()
-                        .ToImmutableArray()
-                )
-                from constructor in typeDecl.Constructors
-                select KeyValuePair.Create(
-                    constructor.Sig,
-                    new TypeScheme<ConstructorType>(typeDecl.Params, new ConstructorType(constructor.Args, returnType))
-                )
-            ).ToImmutableDictionary();
+            var constructors = InferConstructors(program.Decls.OfType<TypeDecl>());
             
             // hypothesise unification variables for each predicate
             var predicates = ImmutableDictionary<Sig, TypeScheme<PredicateType>>.Empty;
@@ -107,6 +92,46 @@ namespace Amateurlog
         {
             _freshnessCounter++;
             return new TypeVariable("$" + (seed ?? "") + "#" + _freshnessCounter);
+        }
+
+        private static ImmutableDictionary<Sig, TypeScheme<ConstructorType>> InferConstructors(IEnumerable<TypeDecl> typeDecls)
+        {
+            var types = typeDecls.Select(d => new Sig(d.Name, d.Params.Length)).ToImmutableHashSet();
+
+            TypeScheme<ConstructorType> GetConstructorType(TypeDecl decl, TypeApplication constructor)
+            {
+                var mentionedVariables = constructor.Variables<Type>();
+                if (!mentionedVariables.Except(decl.Params).IsEmpty)
+                {
+                    throw new Exception("type variable not in scope");
+                }
+
+                var mentionedTypes = constructor.Args
+                    .SelectMany(a => a.SelfAndDescendants())
+                    .OfType<TypeApplication>()
+                    .Select(a => new Sig(a.Name, a.Args.Length));
+                if (mentionedTypes.Any(t => !types.Contains(t)))
+                {
+                    throw new Exception("type not in scope");
+                }
+
+                var returnType = new TypeApplication(
+                    decl.Name,
+                    decl.Params
+                        .Select(n => new TypeVariable(n))
+                        .Cast<Type>()
+                        .ToImmutableArray()
+                );
+                return new TypeScheme<ConstructorType>(decl.Params, new ConstructorType(constructor.Args, returnType));
+            }
+            return (
+                from typeDecl in typeDecls
+                from constructor in typeDecl.Constructors
+                select KeyValuePair.Create(
+                    constructor.Sig,
+                    GetConstructorType(typeDecl, constructor)
+                )
+            ).ToImmutableDictionary();
         }
 
         private static Graph<Sig, Unit> BuildCallGraph(Program program)
